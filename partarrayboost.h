@@ -7,6 +7,7 @@
 #include <boost/serialization/access.hpp>
 #include <boost/serialization/vector.hpp>
 #include <boost/serialization/split_free.hpp>
+#include <string>
 #include "Vect.h"
 #include "Part.h"
 #include "StateMachine.h"
@@ -74,10 +75,28 @@ template<class Archive> void save(Archive & ar,const PartArray & v, const unsign
     ar & v.parts;
 }
 
+
+template<class Archive> void load(Archive & ar, StateMachine & v, const unsigned int version)
+{
+    UNUSED(version)
+
+    string s;
+    ar & s;
+    v.fromString(s);
+}
+
+template<class Archive> void save(Archive & ar,const StateMachine & v, const unsigned int version)
+{
+    UNUSED(version)
+
+    ar & v.toString();
+}
+
 } // namespace serialization
 } // namespace boost
 
 BOOST_SERIALIZATION_SPLIT_FREE(PartArray)
+BOOST_SERIALIZATION_SPLIT_FREE(StateMachine)
 BOOST_IS_MPI_DATATYPE(Vect)
 
 #endif // PARTARRAYBOOST_H

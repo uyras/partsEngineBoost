@@ -8,38 +8,41 @@
 
 #include "StateMachine.h"
 #include "StateMachineFree.h"
-#include "wanglandauparallel.h"
+#include "wanglandaumpi.h"
 
 #include "random.h"
 
+#include <boost/mpi.hpp>
+
 
 using namespace std;
+using namespace boost::mpi;
 
 int main(int argc, char *argv[])
 {
     QCoreApplication a(argc, argv);
+    environment env;
+    communicator comm;
 
-    config::Instance()->srand(time(NULL));
+    config::Instance()->srand(time(NULL)+comm.rank());
     config::Instance()->m = 1;
 
 
-    HoneycombSpinIceArray *sys;
+    PartArray *sys;
 
-    sys = new HoneycombSpinIceArray();
+    sys = new PartArray();
     sys->dropHoneyComb(2,2,1);
-    sys->setToGroundState();
-    cout<<sys->calcEnergy1()<<endl;
-    sys->save("min1.dat");
-    sys->PartArray::setToGroundState();
-    cout<<sys->calcEnergy1()<<endl;
-    sys->save("min2.dat");
+    //sys->PartArray::setToGroundState();
 
-    /*
-    qDebug()<<"init Wang Landau Parallel";
-    WangLandauParallel w(sys,1000,4,0.8,4);
-    qDebug()<<"start Wang Landau DOS";
+
+    comm.barrier();
+    if (comm.rank()==0)
+        qDebug()<<"0: init Wang Landau Parallel";
+    WangLandauMPI w(sys,1000,3,0.8);
+    if (comm.rank()==0)
+        qDebug()<<"0: start Wang Landau DOS";
     w.dos();
-    */
+
 
 
     delete sys;

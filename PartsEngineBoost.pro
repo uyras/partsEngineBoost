@@ -15,23 +15,25 @@ QMAKE_CXX_DEBUG = $$QMAKE_CXX
 QMAKE_LINK = $$QMAKE_CXX
 QMAKE_CC = mpicc
 
-QMAKE_CFLAGS += $$system(mpicc --showme:compile)
-QMAKE_LFLAGS += $$system(mpicxx --showme:link)
-QMAKE_CXXFLAGS += $$system(mpicxx --showme:compile) -DMPICH_IGNORE_CXX_SEEK
-QMAKE_CXXFLAGS_RELEASE += $$system(mpicxx --showme:compile) -DMPICH_IGNORE_CXX_SEEK
-
 HEADERS += partarrayboost.h \
     PartArrayMPI.h \
-    statemachinegmp.h
+    statemachinegmp.h \
+    wanglandaumpi.h
 
 SOURCES += PartArrayMPI.cpp \
-        statemachinegmp.cpp
+        statemachinegmp.cpp \
+    wanglandaumpi.cpp
 
 OTHER_FILES += \
     README.md \
     .gitignore
 
 LIBS+= -lboost_mpi -lboost_serialization
+
+LIBS += -L$$PWD/../partsEngine/ -lPartsEngine
+INCLUDEPATH += $$PWD/../partsEngine
+DEPENDPATH += $$PWD/../partsEngine
+PRE_TARGETDEPS += $$PWD/../partsEngine/libPartsEngine.a
 
 CONFIG(debug,debug|release) {
     SOURCES += main.cpp
