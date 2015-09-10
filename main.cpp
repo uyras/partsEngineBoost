@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
     environment env;
     communicator comm;
 
-    config::Instance()->srand(time(NULL)+comm.rank());
+    Random::Instance(time(NULL)+comm.rank());
     config::Instance()->m = 1;
 
 
@@ -36,11 +36,9 @@ int main(int argc, char *argv[])
 
 
     comm.barrier();
-    if (comm.rank()==0)
-        qDebug()<<"0: init Wang Landau Parallel";
+    if (comm.rank()==0) qDebug()<<"init Wang Landau Parallel";
     WangLandauMPI w(sys,1000,3,0.8);
-    if (comm.rank()==0)
-        qDebug()<<"0: start Wang Landau DOS";
+    if (comm.rank()==0) qDebug()<<"start Wang Landau DOS";
     w.dos();
 
 

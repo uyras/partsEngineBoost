@@ -13,8 +13,9 @@ WangLandauMPI::WangLandauMPI(PartArray *system, unsigned int intervals, unsigned
     //@todo Выдавать ошибку если валкеров на гап хотя бы меньше чем три
     //@todo Выдавать ошибку если валкеров на гап нечерное число (например 10 валкеров и 3 гапа
 
-    gapNumber = floor(world.rank()/gaps);
-    walkersByGap = world.size()/gaps;
+    walkersByGap = floor(world.size()/gaps);
+    size = walkersByGap*gaps;
+    gapNumber = floor(world.rank()/walkersByGap);
 
     //Определяем соседние узлы следующего (соседнего) окна
     if (gapNumber!=gaps-1) {
@@ -22,14 +23,12 @@ WangLandauMPI::WangLandauMPI(PartArray *system, unsigned int intervals, unsigned
             neightbourWalkers.push_back((gapNumber+1)*walkersByGap+i);
     } else {
         for (unsigned int i=0;i<walkersByGap;i++)
-            neightbourWalkers.push_back((gapNumber)*walkersByGap+i);
+            neightbourWalkers.push_back(i);
     }
 
     //определяем узлы своего окна
     for (unsigned int i=0;i<walkersByGap;i++)
         sameWalkers.push_back(gapNumber*walkersByGap+i);
-
-
 
     //считаем минимум и максимум системы
     sys->setToMaximalState();
@@ -39,7 +38,7 @@ WangLandauMPI::WangLandauMPI(PartArray *system, unsigned int intervals, unsigned
     this->eMin = sys->calcEnergy1();
 
     //слегка расширяем границы, дабы нормально работало сравнение double
-    double delta=(eMax-eMin)*0.01/(double)(intervals-1);
+    double delta=(eMax-eMin)*0.001/(double)(intervals-1);
     eMax+=delta; eMin-=delta;
 
     this->dE = (eMax-eMin)/(intervals-1);
@@ -74,7 +73,7 @@ WangLandauMPI::~WangLandauMPI()
 
 vector<double> WangLandauMPI::dos()
 {
-    if (world.rank()==0) qDebug()<<"0: start DOS";
+    if (world.rank()==0) qDebug()<<"start DOS";
     world.barrier();
 
     bool continueFlag=true;
@@ -113,7 +112,7 @@ vector<double> WangLandauMPI::dos()
 
 void WangLandauMPI::walk(unsigned stepsPerWalk)
 {
-    qDebug()<<world.rank()<<"MC step";
+    qDebug()<<"MC step";
     double eOld = sys->calcEnergy1FastIncremental(eInit);
     double eNew;
 
@@ -223,7 +222,7 @@ void WangLandauMPI::makeNormalInitState()
         this->sys->state->randomize();
         i++;
     }
-    qDebug()<<world.rank()<<": normalize init state takes "<<i<<" steps";
+    qDebug()<<": normalize init state takes "<<i<<" steps";
     this->updateGH(eTemp);
 }
 
@@ -246,33 +245,35 @@ double WangLandauMPI::calcAverageH()
 bool WangLandauMPI::recieveSystem()
 {
     if (boost::optional<status> s = this->world.iprobe(any_source,tag_configSwap)){
-        qDebug()<<world.rank()<<"Recieve system: signal found from"<<(*s).source();
+        //qDebug()<<"Recieve system: signal found from"<<(*s).source();
         string state;
         world.recv((*s).source(),tag_configSwap,state);
         world.send((*s).source(),tag_configSwap,sys->state->toString());
         sys->state->fromString(state);
-        qDebug()<<world.rank()<<"Recieve system: swap complete with"<<(*s).source();
+        qDebug()<<"Recieve system: swap complete with"<<(*s).source();
         return true;
     } else {
-        qDebug()<<world.rank()<<"Recieve system: signal not found";
+        //qDebug()<<"Recieve system: signal not found";
         return false;
     }
 }
 
 void WangLandauMPI::sendSystem()
 {
-    int pair = neightbourWalkers[Random::Instance()->next(neightbourWalkers.size())];
-    qDebug()<<world.rank()<<"Send system: exchange with"<<pair;
+    int rnum=Random::Instance()->next(neightbourWalkers.size());
+    //cout<<"random gives "<<(rnum = Random::Instance()->next(neightbourWalkers.size()))<<endl;
+    int pair = neightbourWalkers[rnum];
+    qDebug()<<"Send system: exchange with"<<pair;
     world.send(pair,tag_configSwap,sys->state->toString());
     string state;
     world.recv(pair,tag_configSwap,state);
     sys->state->fromString(state);
-    qDebug()<<world.rank()<<"Send system: exchange complete with"<<pair;
+    //qDebug()<<"Send system: exchange complete with"<<pair;
 }
 
 void WangLandauMPI::averageHistogramms()
 {
-    qDebug()<<world.rank()<<"Start averaging";
+    qDebug()<<"Start averaging";
     //проверить, достиг ли кто-то еще этой точки. Если нет, стать "хостом".
     if (boost::optional<status> s = this->world.iprobe(any_source,tag_averageQuery)){
         int n=0;
@@ -281,7 +282,7 @@ void WangLandauMPI::averageHistogramms()
     } else {
         this->averageMaster();
     }
-    qDebug()<<world.rank()<<"Finish averaging";
+    qDebug()<<"Finish averaging";
 }
 
 void WangLandauMPI::averageMaster()
@@ -334,12 +335,12 @@ bool WangLandauMPI::allFinished()
         this->world.recv((*s).source(),tag_averageQuery); //получаем запрос, чтобы не валялся в буфере
         finishedProcesses++;
     }
-    return finishedProcesses==world.size();
+    return finishedProcesses==size;
 }
 
 void WangLandauMPI::sygnaliseFinish()
 {
-    for (int i=0;i<world.size();i++){
+    for (int i=0;i<size;i++){
         world.isend(i,tag_finish);
     }
 }
@@ -373,5 +374,49 @@ void WangLandauMPI::setValues(vector<double> &_h, double _v)
         (*_i)=_v;
         _i++;
     }
+}
+
+string WangLandauMPI::dump()
+{
+    stringstream ss;
+    ss<<"rank="<<world.rank()<<endl;
+    ss<<"w.size="<<size<<endl;
+    ss<<"size="<<size<<endl;
+    ss<<"eMin="<<this->eMin<<endl;
+    ss<<"dE="<<this->dE<<endl;
+    ss<<"fMin="<<this->fMin<<endl;
+    ss<<"f="<<this->f<<endl;
+
+    ss<<"from="<<this->from<<endl;
+    ss<<"to="<<this->to<<endl;
+
+    ss<<"nFrom="<<this->nFrom<<endl;
+    ss<<"nTo="<<this->nTo<<endl;
+
+    ss<<"eInit="<<this->eInit<<endl;
+    ss<<"gaps="<<this->gaps<<endl;
+    ss<<"walkersByGap="<<this->walkersByGap<<endl;
+    ss<<"gapNumber="<<this->gapNumber<<endl;
+    ss<<"intervals="<<this->intervals<<endl;
+    ss<<"overlap="<<this->overlap<<endl;
+    ss<<"accuracy="<<this->accuracy<<endl;
+
+    ss<<"average="<<this->average<<endl;
+    ss<<"hCount="<<this->hCount<<endl;
+
+    ss<<"neightbourWalkers=";
+    for (int i=0;i<neightbourWalkers.size();i++){
+        ss<<neightbourWalkers[i]<<",";
+    }
+    ss<<endl;
+    ss<<"sameWalkers=";
+    for (int i=0;i<sameWalkers.size();i++){
+        ss<<sameWalkers[i]<<",";
+    }
+    ss<<endl;
+
+    ss<<"system size="<<this->sys->count()<<endl;
+    ss<<"system state="<<this->sys->state->toString()<<endl;
+    return ss.str();
 }
 

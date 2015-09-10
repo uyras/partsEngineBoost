@@ -60,6 +60,8 @@ private:
 
     inline void setValues(vector<double> &_h, double _v);
 
+    std::string dump();
+
     PartArray *sys; //экземпляр вычисляемой системы
     double eMin,eMax, //максимальная и минимальная энергии системы
         dE, fMin, f;
@@ -85,6 +87,7 @@ private:
 
     environment env;
     communicator world;
+    int size; //xbckj задействованных блуждателей
     int root;
 
     const int
