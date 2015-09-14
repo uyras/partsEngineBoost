@@ -4,6 +4,7 @@
 #include <vector>
 #include <PartArray.h>
 #include <cmath>
+#include <ctime>
 #include <QString>
 #include <QDebug>
 #include "partarrayboost.h"
@@ -24,9 +25,8 @@ public:
 
     inline unsigned int getIntervalNumber(const double Energy);
     inline double getEnergyByInterval(const unsigned int interval);
-    bool inRange(const double E);
-
-    bool isFlat();//критерий плоскости гистограммы
+    inline bool inRange(const double _E);
+    inline bool inRange(const int _E);
 
     /**
      * @brief processWalk Выполняется только когда h стала плоской
@@ -55,8 +55,18 @@ private:
     void sygnaliseFinish(); //сообщить всем узлам об окончании
     int finishedProcesses; //число финишировавших
 
-    void makeAnalyseFile();
+
+    bool checkFlat();//критерий плоскости гистограммы
+    bool allFlatted(); //Возвращает true, если все блуждатели в окне плоские
+    void sygnaliseFlat(); //сообщить всем узлам о достижении плоскости
+    int flatedProcesses;
+    bool thisFlatted;
+
+
     void saveToFile();
+
+    void checkStop();
+    void callStop();
 
     inline void setValues(vector<double> &_h, double _v);
 
@@ -91,11 +101,17 @@ private:
     int root;
 
     const int
-        tag_configSwap = 1,//
-        tag_finish = 2,//
-        tag_averageQuery=3,//
-        tag_averageHistogramm=4,//
-        tag_averagedHistogramm=5;//
+        tag_swapEnergy, //отправка энергий
+        tag_swapEnergyPack, //отправка энергии, и двух точек гистограммы
+        tag_swapConfig, //отправка конфигурации системы
+        tag_swapFalse, //ошибка отправки (вне энергетической зоны или малая вероятность обмена)
+        tag_finish,//
+        tag_averageQuery,//
+        tag_averageHistogramm,//
+        tag_averagedHistogramm, //
+        tag_complete_swap,     //отправляется из хоста всем узлам, когда процесс обмена завершился
+        tag_stopsignal,
+        tag_flatSignal; //сигнал о том, что узел плоский
 };
 
 #endif // WANGLANDAUMPI_H
