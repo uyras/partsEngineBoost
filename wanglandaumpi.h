@@ -21,12 +21,13 @@ public:
     ~WangLandauMPI();
 
     vector<double> dos();
+    void testDos(); //Функция для тестирования разных функций в динамике
     void walk(unsigned stepsPerWalk);
 
     inline unsigned int getIntervalNumber(const double Energy);
     inline double getEnergyByInterval(const unsigned int interval);
     inline bool inRange(const double _E);
-    inline bool inRange(const int _E);
+    inline bool inRange(const unsigned int _E);
 
     /**
      * @brief processWalk Выполняется только когда h стала плоской
@@ -37,14 +38,14 @@ public:
 
     inline double getG(double e);
 
-    void updateGH(double E);
+    void updateGH(double E=0.0);
 
     void makeNormalInitState();
 
     double calcAverageH();
 
     bool recieveSystem(); //Получить систему из любого узла, неблокирующая операция
-    void sendSystem(); //Отправить систему случайному блуждателю своего окна
+    void sendSystem(int pair=-1); //Отправить систему случайному блуждателю своего окна
 
 private:
     void averageHistogramms(); //усреднить гистограмму между блуждателями своего окна, блокирующая
@@ -53,13 +54,13 @@ private:
 
     bool allFinished(); //Возвращает true если все процессы завершили работу.
     void sygnaliseFinish(); //сообщить всем узлам об окончании
-    int finishedProcesses; //число финишировавших
+    unsigned int finishedProcesses; //число финишировавших
 
 
     bool checkFlat();//критерий плоскости гистограммы
     bool allFlatted(); //Возвращает true, если все блуждатели в окне плоские
     void sygnaliseFlat(); //сообщить всем узлам о достижении плоскости
-    int flatedProcesses;
+    unsigned int flatedProcesses;
     bool thisFlatted;
 
 
@@ -97,16 +98,14 @@ private:
 
     environment env;
     communicator world;
-    int size; //xbckj задействованных блуждателей
+    int size; //число задействованных блуждателей
     int root;
 
     const int
         tag_swapEnergy, //отправка энергий
         tag_swapEnergyPack, //отправка энергии, и двух точек гистограммы
         tag_swapConfig, //отправка конфигурации системы
-        tag_swapFalse, //ошибка отправки (вне энергетической зоны или малая вероятность обмена)
         tag_finish,//
-        tag_averageQuery,//
         tag_averageHistogramm,//
         tag_averagedHistogramm, //
         tag_complete_swap,     //отправляется из хоста всем узлам, когда процесс обмена завершился
