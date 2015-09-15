@@ -47,6 +47,8 @@ public:
     bool recieveSystem(); //Получить систему из любого узла, неблокирующая операция
     void sendSystem(int pair=-1); //Отправить систему случайному блуждателю своего окна
 
+    void setMinMaxEnergy(double eMin, double eMax);
+
 private:
     void averageHistogramms(); //усреднить гистограмму между блуждателями своего окна, блокирующая
     void averageMaster(); //хост усреднения

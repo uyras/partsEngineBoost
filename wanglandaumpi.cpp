@@ -1,7 +1,12 @@
 #include "wanglandaumpi.h"
 
 WangLandauMPI::WangLandauMPI(PartArray *system, unsigned int intervals, unsigned int gaps, double overlap, double accuracy):
+    finishedProcesses(0),
+    flatedProcesses(0),
+    thisFlatted(false),
     sys(system->copy()),
+    eMin(0),
+    eMax(0),
     gaps(gaps),
     intervals(intervals),
     overlap(overlap),
@@ -38,26 +43,9 @@ WangLandauMPI::WangLandauMPI(PartArray *system, unsigned int intervals, unsigned
     for (unsigned int i=0;i<walkersByGap;i++)
         sameWalkers.push_back(gapNumber*walkersByGap+i);
 
-    //считаем минимум и максимум системы
-    qDebug()<< "(init) calculating maximal state";
-    sys->setToMaximalState();
-    this->eMax = sys->calcEnergy1();
 
-    qDebug()<<"(init) calculating ground state";
-    sys->setToGroundState();
-    this->eMin = sys->calcEnergy1();
-
-    //слегка расширяем границы, дабы нормально работало сравнение double
-    double delta=(eMax-eMin)*0.001/(double)(intervals-1);
-    eMax+=delta; eMin-=delta;
-
-    this->dE = (eMax-eMin)/(intervals-1);
     this->f = exp(1);
     this->fMin=1.00001;
-
-    qDebug()<<"(init) init starting energy";
-    sys->state->reset();
-    this->eInit = sys->calcEnergy1FastIncrementalFirst();
 
     //Добавляем интервалы в гистограмму
     qDebug()<<"(init) init histogramms";
@@ -65,20 +53,6 @@ WangLandauMPI::WangLandauMPI(PartArray *system, unsigned int intervals, unsigned
         g.push_back(0);
         h.push_back(0);
     }
-
-    //устанавливаем границы волкера
-    double x = (this->eMax-this->eMin)/((double)gaps*(1.-overlap)+overlap); //ширина одного интервала
-    this->from = this->eMin + (double)gapNumber * x * (1.-overlap);
-    this->to = this->from+x;
-    this->nFrom = getIntervalNumber(from);
-    this->nTo = getIntervalNumber(to);
-
-
-    qDebug()<<"(init) averaging init state";
-    this->makeNormalInitState();
-
-    finishedProcesses = 0;
-    flatedProcesses = 0; thisFlatted = false;
 }
 
 WangLandauMPI::~WangLandauMPI()
@@ -89,6 +63,34 @@ WangLandauMPI::~WangLandauMPI()
 vector<double> WangLandauMPI::dos()
 {
     qDebug()<<"prepare to start DOS";
+
+    //считаем минимум и максимум системы
+    if (this->eMin==0 && this->eMax==0){
+        qDebug()<< "(init) calculating maximal state";
+        sys->setToMaximalState();
+        double min = sys->calcEnergy1();
+
+        qDebug()<<"(init) calculating ground state";
+        sys->setToGroundState();
+        double max = sys->calcEnergy1();
+
+        this->setMinMaxEnergy(min,max);
+    }
+
+    qDebug()<<"(init) init starting energy";
+    sys->state->reset();
+    this->eInit = sys->calcEnergy1FastIncrementalFirst();
+
+    //устанавливаем границы волкера
+    double x = (this->eMax-this->eMin)/((double)gaps*(1.-overlap)+overlap); //ширина одного интервала
+    this->from = this->eMin + (double)gapNumber * x * (1.-overlap);
+    this->to = this->from+x;
+    this->nFrom = getIntervalNumber(from);
+    this->nTo = getIntervalNumber(to);
+
+    qDebug()<<"(init) averaging init state";
+    this->makeNormalInitState();
+
     if (world.rank()==0) qDebug()<<"start DOS";
     world.barrier();
 
@@ -413,6 +415,19 @@ void WangLandauMPI::sendSystem(int pair)
             }
         }
     }
+}
+
+void WangLandauMPI::setMinMaxEnergy(double eMin, double eMax)
+{
+    //Выставляем границы
+    this->eMin = eMin;
+    this->eMax = eMax;
+
+    //слегка расширяем границы, дабы нормально работало сравнение double
+    double delta=(eMax-eMin)*0.001/(double)(intervals-1);
+    eMax+=delta; eMin-=delta;
+
+    this->dE = (eMax-eMin)/(intervals-1);
 }
 
 void WangLandauMPI::averageHistogramms()
