@@ -62,22 +62,22 @@ WangLandauMPI::~WangLandauMPI()
 
 vector<double> WangLandauMPI::dos()
 {
-    qDebug()<<"prepare to start DOS";
+    if (world.rank()==0) qDebug()<<"prepare to start DOS";
 
     //считаем минимум и максимум системы
     if (this->eMin==0 && this->eMax==0){
-        qDebug()<< "(init) calculating maximal state";
+        if (world.rank()==0) qDebug()<< "(init) calculating maximal state";
         sys->setToMaximalState();
         double min = sys->calcEnergy1();
 
-        qDebug()<<"(init) calculating ground state";
+        if (world.rank()==0) qDebug()<<"(init) calculating ground state";
         sys->setToGroundState();
         double max = sys->calcEnergy1();
 
         this->setMinMaxEnergy(min,max);
     }
 
-    qDebug()<<"(init) init starting energy";
+    if (world.rank()==0) qDebug()<<"(init) init starting energy";
     sys->state->reset();
     this->eInit = sys->calcEnergy1FastIncrementalFirst();
 
@@ -88,7 +88,8 @@ vector<double> WangLandauMPI::dos()
     this->nFrom = getIntervalNumber(from);
     this->nTo = getIntervalNumber(to);
 
-    qDebug()<<"(init) averaging init state";
+    if (world.rank()==0) qDebug()<<"(init) averaging init state";
+    double e = this->sys->calcEnergy1FastIncremental(eInit);
     this->makeNormalInitState();
 
     if (world.rank()==0) qDebug()<<"start DOS";
@@ -99,7 +100,7 @@ vector<double> WangLandauMPI::dos()
     while (continueFlag){
         checkStop();
 
-        qDebug()<<world.rank()<<"start step";
+        //qDebug()<<world.rank()<<"start step";
         this->walk(10000);
 
         if (this->checkFlat() && !this->thisFlatted) //проверяем на плоскость
@@ -107,13 +108,12 @@ vector<double> WangLandauMPI::dos()
 
         checkStop();
 
-        //qDebug()<<"swap configurations";
         //проверяем нет ли заявок на обмен конфигами
         //если есть заявка, принимаем ее, отправляем и принимаем конфиг
-        qDebug()<<"recieve system";
+        //qDebug()<<"recieve system";
         this->recieveSystem();
         //если нет заявок на обмен, отправляем заявку и ждем обмена
-        qDebug()<<"send system";
+        //qDebug()<<"send system";
         this->sendSystem();
         //qDebug()<<"swap complete";
         checkStop();
@@ -127,10 +127,10 @@ vector<double> WangLandauMPI::dos()
 
         //если ВСЕ блуждатели завершили работу, сохраняем результат и выходим
         if (this->allFinished()){
-            qDebug()<<"All precesses finished!";
+            //qDebug()<<"All precesses finished!";
             this->saveToFile();
 
-            qDebug()<<"Sleeping 1 seconds before quit";
+            //qDebug()<<"Sleeping 1 seconds before quit";
             sleep(1);
             this->recieveSystem(); //получаем все сообщения перед выходом
 
@@ -227,7 +227,7 @@ bool WangLandauMPI::allFlatted()
         flatedProcesses++;
     }
 
-    qDebug()<<"check flatted:"<<flatedProcesses;
+    qDebug("(%d) check flatted: %d",world.rank(),flatedProcesses);
     return flatedProcesses==walkersByGap;
 }
 
@@ -271,6 +271,10 @@ void WangLandauMPI::updateGH(double E)
 {
     if (E==0.){
         E = this->sys->calcEnergy1FastIncremental(this->eInit);
+    }
+
+    if (!this->inRange(E)){
+        qFatal("(%d) Error! Trying to add e=%f out of range (%f(%d), %f(%d))",world.rank(),E,from,nFrom,to,nTo);
     }
 
     g[this->getIntervalNumber(E)]+=log(f);
@@ -325,8 +329,9 @@ bool WangLandauMPI::recieveSystem()
         unsigned ex,ey;
         double gjex,gjey;
 
-        qDebug()<<QString("(recv) %2 recieve pair energy from %1").arg(pair).arg(clock());
+        qDebug()<<QString("(recv) recieve pair energy from %1").arg(pair);
         world.recv(pair,tag_swapEnergy,ex);
+        qDebug("(recv) recieved from %d E=%f(%d)",pair,getEnergyByInterval(ex),ex);
 
         string newState = this->sys->state->toString();
         bool rejected = !this->inRange(ex);
@@ -341,24 +346,28 @@ bool WangLandauMPI::recieveSystem()
         pack<<newState;
 
         if (rejected){
-            qDebug()<<QString("(recv) %2 send that energy not in range %1").arg(pair).arg(clock());
+            qDebug()<<QString("(recv) send that energy not in range %1").arg(pair);
             world.send(pair,tag_swapEnergyPack,pack);
             return recieved;
         } else {
-            qDebug()<<QString("(recv) %2 send energypack to %1").arg(pair).arg(clock());
+            qDebug()<<QString("(recv) send energypack to %1").arg(pair);
             world.send(pair,tag_swapEnergyPack,pack);
         }
 
-        qDebug()<<QString("(recv) %2 waiting for new state from %1").arg(pair).arg(clock());
+        qDebug()<<QString("(recv) waiting for new state from %1").arg(pair);
 
 
         world.recv(pair,tag_swapConfig,newState);
-        if (newState.compare("-1")==0){
-            qDebug()<<QString("(recv) %2 new state rejected by %1").arg(pair).arg(clock());
+        if (newState.compare("false")==0){
+            qDebug()<<QString("(recv) new state rejected by %1").arg(pair);
         } else {
             sys->state->fromString(newState);
+            qDebug()<<
+                       QString("(recv) new state (%2) applied as (%3) from %1")
+                       .arg(pair)
+                       .arg(newState.c_str())
+                       .arg(sys->state->toString().c_str());
             this->updateGH();
-            qDebug()<<QString("(recv) %2 new state applied from %1").arg(pair).arg(clock());
             recieved = true;
         }
     }
@@ -370,19 +379,22 @@ void WangLandauMPI::sendSystem(int pair)
     if (neightbourWalkers.size()>0) {
         if (pair==(-1))
             pair = neightbourWalkers[Random::Instance()->next(neightbourWalkers.size())];
-        qDebug()<<QString("(send) %2 offer to exchange with %1").arg(pair).arg(clock());
 
         unsigned ex,ey;
         double giex,giey,gjex,gjey;
 
-        ex = this->getIntervalNumber(this->sys->calcEnergy1FastIncremental(this->eInit));
-        giex = this->g[ex];
+        {
+            double eTemp = this->sys->calcEnergy1FastIncremental(this->eInit);
+            ex = this->getIntervalNumber(eTemp);
+            giex = this->g[ex];
+            qDebug("(send) offer to exchange with %d, E=%f (%d)", pair, eTemp, ex);
+        }
 
         //отправлем свою энергию и ждем пока блуждатель ответит
         world.send(pair,tag_swapEnergy,ex);
 
         //получаем ответ
-        qDebug()<<QString("(send) %2 waiting for energypack from %1").arg(pair).arg(clock());
+        qDebug()<<QString("(send) waiting for energypack from %1").arg(pair);
         packed_iarchive pack(world);
         world.recv(pair,tag_swapEnergyPack,pack);
 
@@ -395,23 +407,24 @@ void WangLandauMPI::sendSystem(int pair)
         giey = this->g[ey];
 
         if (rejected){ //если энергия не подходит паре, завершаем процесс обмена
-            qDebug()<<QString("(send) %2 exchange rejected by %1").arg(pair).arg(clock());
+            qDebug()<<QString("(send) exchange rejected by %1").arg(pair);
             return;
         } else {
-            qDebug()<<QString("(send) %2 calculating probability for exchange with %1").arg(pair).arg(clock());
+            qDebug()<<QString("(send) calculating probability for exchange with %1").arg(pair);
             double p = (giex+gjey) - (giey+gjex);
             double randnum = Random::Instance()->nextDouble();
             if (0.0==randnum) //логарифма нуля не существует
                 randnum=10e-20;
             randnum = std::log(randnum);
             if (inRange(ey) && randnum <= p){ //если вероятность получилась, отправляем свой конфиг
-                qDebug()<<QString("(send) %2 probability confirmed, send config %1").arg(pair).arg(clock());
+                qDebug()<<QString("(send) probability confirmed, send config %3 to %1").arg(pair).arg(sys->state->toString().c_str());
                 world.send(pair,tag_swapConfig,sys->state->toString());
                 sys->state->fromString(newState);
                 this->updateGH();
             } else {
-                qDebug()<<QString("(send) %2 probability rejected, send signal %1").arg(pair).arg(clock());
-                world.send(pair,tag_swapConfig,"false");
+                qDebug()<<QString("(send) probability rejected, send signal %1").arg(pair);
+                string s = "false";
+                world.send(pair,tag_swapConfig,s);
             }
         }
     }
@@ -424,10 +437,10 @@ void WangLandauMPI::setMinMaxEnergy(double eMin, double eMax)
     this->eMax = eMax;
 
     //слегка расширяем границы, дабы нормально работало сравнение double
-    double delta=(eMax-eMin)*0.001/(double)(intervals-1);
-    eMax+=delta; eMin-=delta;
+    double delta=(this->eMax-this->eMin)*0.01/(double)(intervals-1);
+    this->eMax+=delta; this->eMin-=delta;
 
-    this->dE = (eMax-eMin)/(intervals-1);
+    this->dE = (this->eMax-this->eMin)/(intervals-1);
 }
 
 void WangLandauMPI::averageHistogramms()
@@ -489,7 +502,7 @@ bool WangLandauMPI::allFinished()
         finishedProcesses++;
     }
 
-    qDebug()<<"check finished:"<<finishedProcesses;
+    qDebug("(%d) check finished: %d",world.rank(),finishedProcesses);
     return finishedProcesses==(unsigned)size;
 }
 
@@ -556,6 +569,7 @@ string WangLandauMPI::dump()
     ss<<"w.size="<<size<<endl;
     ss<<"size="<<size<<endl;
     ss<<"eMin="<<this->eMin<<endl;
+    ss<<"eMax="<<this->eMax<<endl;
     ss<<"dE="<<this->dE<<endl;
     ss<<"fMin="<<this->fMin<<endl;
     ss<<"f="<<this->f<<endl;

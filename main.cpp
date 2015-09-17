@@ -31,14 +31,14 @@ int main(int argc, char *argv[])
 
     PartArray *sys;
 
-    sys = new PartArray();
-    sys->dropHoneyComb(2,2,1);
+    sys = new PartArray("honeycomb_30_circle_1.sys");
     //sys->PartArray::setToGroundState();
 
 
     comm.barrier();
     if (comm.rank()==0) qDebug()<<"init Wang Landau Parallel";
     WangLandauMPI w(sys,1000,3,0.8);
+    w.setMinMaxEnergy(-78.1466,112.283);
     if (comm.rank()==0) qDebug()<<"start Wang Landau DOS";
     w.dos();
 
