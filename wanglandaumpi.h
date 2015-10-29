@@ -7,6 +7,7 @@
 #include <ctime>
 #include <QString>
 #include <QDebug>
+#include <QtDebug>
 #include "partarrayboost.h"
 #include "random.h"
 #include <boost/mpi.hpp>
@@ -40,7 +41,32 @@ public:
 
     void updateGH(double E=0.0);
 
+    /**
+     * @brief makeNormalInitState
+     * генерирует состояние системы, входящее в интервал энергий (this->from, this->to),
+     * начиная из любого состояния (не обязательно GS).
+     * Просто блуждает по пространству состояний.
+     */
     void makeNormalInitState();
+
+    /**
+     * @brief makeNormalInitStateFromGS
+     * генерирует состояние системы, входящее в интервал (this->from, this->to),
+     * корректно работает только начиная из GS.
+     * Блуждает по пространству состояний, постоянно повышая энергию.
+     * @param revert если false, то метод пытается понизить энергию. Если true, то пытается повысить.
+     */
+    void makeNormalInitStateFromGS(bool revert = false);
+
+    /**
+     * @brief makeNormalInitStateBothSides
+     * генерирует состояние системы, входящее в интервал (this->from, this->to),
+     * при работе определяет, энергетический интервал находится ближе к концу или к началу энергий.
+     * Если к концу, то приводит систему в максимальное состояние и понижает энергию.
+     * Если к началу, приводит систему в минимальное состояние и повышает энергию.
+     * Для работы должны быть оптимизированы setToGS и setToMaximalState системы.
+     */
+    void makeNormalInitStateBothSides();
 
     double calcAverageH();
 
@@ -48,6 +74,12 @@ public:
     void sendSystem(int pair=-1); //Отправить систему случайному блуждателю своего окна
 
     void setMinMaxEnergy(double eMin, double eMax);
+
+    /**
+     * @brief save сохранить гистограммы в файл
+     * @param filename Имя файла для сохранения. По умолчанию сохраняет в формате g_<number_of_parts>_<intervals>.dat.
+     */
+    void save(std::string filename="");
 
 private:
     void averageHistogramms(); //усреднить гистограмму между блуждателями своего окна, блокирующая
@@ -65,13 +97,18 @@ private:
     unsigned int flatedProcesses;
     bool thisFlatted;
 
-
-    void saveToFile();
-
     void checkStop();
     void callStop();
 
     inline void setValues(vector<double> &_h, double _v);
+
+    /**
+     * @brief getFromTo Получить индивидуальные границы волкера
+     * @param gap номер интервала, для которого получать границы
+     * @param from Сюда записывается граница "от"
+     * @param to Сюда записывается граница "до"
+     */
+    void getFromTo(double gap, double & from, double & to);
 
     std::string dump();
 
@@ -101,6 +138,7 @@ private:
     environment env;
     communicator world;
     int size; //число задействованных блуждателей
+    int rank;
     int root;
 
     const int
@@ -112,7 +150,8 @@ private:
         tag_averagedHistogramm, //
         tag_complete_swap,     //отправляется из хоста всем узлам, когда процесс обмена завершился
         tag_stopsignal,
-        tag_flatSignal; //сигнал о том, что узел плоский
+        tag_flatSignal, //сигнал о том, что узел плоский
+        tag_saveGistogramm; //cигнал сохранения гистограммы
 };
 
 #endif // WANGLANDAUMPI_H

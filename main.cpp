@@ -14,6 +14,8 @@
 
 #include <boost/mpi.hpp>
 
+#include <QSettings>
+//переделать сохранение дампов и файла
 
 using namespace std;
 using namespace boost::mpi;
@@ -24,29 +26,41 @@ int main(int argc, char *argv[])
     environment env;
     communicator comm;
 
-
     Random::Instance(time(NULL)+comm.rank());
+
     config::Instance()->m = 1;
-
-
     PartArray *sys;
 
-    sys = new PartArray("honeycomb_30_circle_1.sys");
-    //sys->PartArray::setToGroundState();
+    const int
+            width = 50,
+            height = 50,
+            lattice = 1;
+    SquareSpinIceArray *ssi = new SquareSpinIceArray();
+    ssi->dropSpinIce(width, height, lattice);
+    sys = ssi;
+
+    qDebug()<<sys->count();
+
+    const int
+            intervals = 1000,
+            gaps = 20;
+
+    const double
+            overlap=0.8,
+            accuracy=0.1;
 
 
-    comm.barrier();
-    if (comm.rank()==0) qDebug()<<"init Wang Landau Parallel";
-    WangLandauMPI w(sys,1000,3,0.8);
-    w.setMinMaxEnergy(-78.1466,112.283);
-    if (comm.rank()==0) qDebug()<<"start Wang Landau DOS";
-    w.dos();
+    WangLandauMPI w(sys, intervals, gaps, overlap, accuracy);
 
+    if (comm.rank()==0) qInfo()<<"start Wang Landau DOS";
+    w.testDos();
 
+    if (comm.rank()==0) qInfo()<<"WL DOS finished, saving data";
+    w.save();
 
     delete sys;
 
-    cout<<comm.rank()<<" finish"<<endl;
+    qInfo()<<"finish";
+
     return 0;
-    //return a.exec();
 }

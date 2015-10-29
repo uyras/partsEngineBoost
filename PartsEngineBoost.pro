@@ -45,4 +45,6 @@ CONFIG(release,debug|release){
     TEMPLATE = lib
     CONFIG += staticlib
     DESTDIR = $$PWD
+    DEFINES += QT_NO_DEBUG_OUTPUT
 }
+#DEFINES += QT_NO_DEBUG_OUTPUT
