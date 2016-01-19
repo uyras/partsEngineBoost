@@ -113,12 +113,10 @@ private:
     std::string dump();
 
     PartArray *sys; //экземпляр вычисляемой системы
-    double eMin,eMax, //максимальная и минимальная энергии системы
-        dE, fMin, f;
+    double eMin, eMax, dE, fMin, f;
     double from,to; //энергетические интервалы текущего блуждателя
     unsigned int nFrom, nTo; //численные значения интервалов
 
-    double eInit; // энергия для быстрого вычисления энергии
     unsigned int gaps, //число энергетических пробелов
         walkersByGap, //число блуждателей на интервал
         gapNumber, //номер интервала, в котором работает текущий блуждатель

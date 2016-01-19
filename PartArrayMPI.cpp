@@ -3,14 +3,6 @@
 
 PartArrayMPI::PartArrayMPI() : PartArray(){}
 
-PartArrayMPI::PartArrayMPI(double x, double y, double z) : PartArray(x, y, z){}
-
-PartArrayMPI::PartArrayMPI(double x, double y, double z, double density) : PartArray(x, y, z, density){}
-
-PartArrayMPI::PartArrayMPI(double x, double y, double z, int count) : PartArray(x, y, z, count){}
-
-PartArrayMPI::PartArrayMPI(char* file) : PartArray(file){}
-
 /*
 void PartArrayMPI::checkFM2(char* file, double c, double realC){
 
@@ -131,6 +123,7 @@ bool PartArrayMPI::isMySector(int sector, int startFrom){
     else return false;
 }
 
+/*
 void PartArrayMPI::dropRandomMPI(double maxDestiny, int x, int y){
 
     if (config::Instance()->rank==0) std::cout<<"dropping particles with destiny="<<maxDestiny<<" start"<<endl;
@@ -242,7 +235,8 @@ void PartArrayMPI::dropRandomMPI(double maxDestiny, int x, int y){
     if (config::Instance()->rank==0) std::cout<<"dropping particles with destiny="<<maxDestiny<<" complete"<<endl;
 
 }
-
+*/
+/*
 void PartArrayMPI::filterInterMPI(){
     //границы точки вектора
     const float
@@ -328,11 +322,10 @@ void PartArrayMPI::filterInterMPI(){
     }
     std::cout << "complete filtering particles" << endl;
 }
+*/
 
 bool PartArrayMPI::setToGroundState(int thread){
     boost::mpi::broadcast(world,*this,thread);//передали набросанную систему всем для работы
-
-    double eInit = this->calcEnergy1FastIncrementalFirst(); //предподготовка к просчёту, считаем начальную энергию
 
     StateMachineFree minstate;
     //const unsigned long long int maxstate =  pow(2.,this->count()-1);
@@ -343,11 +336,11 @@ bool PartArrayMPI::setToGroundState(int thread){
 
     //считаем минимум для каждого потока
     do {
-        eTemp = this->calcEnergy1FastIncremental(eInit);
-        if (eTemp<minE) { minE=eTemp; minstate = (*this->state); }
+        eTemp = this->E();
+        if (eTemp<minE) { minE=eTemp; minstate = this->state; }
 
         for (int j=0;j<config::Instance()->size-1;j++){
-            if (!this->state->halfNext())
+            if (!this->state.halfNext())
                 break;
         }
     } while (true);
@@ -381,29 +374,28 @@ void PartArrayMPI::getMinMaxEnergy(double &eMin, double &eMax)
 
     double eeMin=DBL_MAX,eeMax=DBL_MIN,eTemp=0;
 
-    this->state->reset();
-    double eInit =calcEnergy1FastIncrementalFirst();
-    StateMachineGmp tempState = *this->state;
+    this->state.reset();
+    StateMachineGmp tempState = this->state;
     if (world.rank()!=0){
         tempState+=(dState*(world.rank()-1)); //потоки обрабатывают свою часть работы, главный остатки
     } else {
         tempState+=(dState*(world.size()-1));
         dState = dTotal - (dState*(world.size()-1));
     }
-    (*this->state)=tempState;
+    this->state=tempState;
     while(dState!=0){
-        eTemp = this->calcEnergy1FastIncremental(eInit);
+        eTemp = this->E();
         if (eeMin>eTemp){
             eeMin = eTemp;
         }
         if (eeMax<eTemp){
             eeMax = eTemp;
         }
-        dState--; this->state->next();
+        dState--; this->state.next();
     }
     boost::mpi::all_reduce(world,eeMin,eMin,boost::mpi::minimum<double>());
     boost::mpi::all_reduce(world,eeMax,eMax,boost::mpi::maximum<double>());
-    this->state->reset();
+    this->state.reset();
 }
 
 vector<Part> PartArrayMPI::transformToParts()

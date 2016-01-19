@@ -6,6 +6,7 @@
 #include <boost/mpi.hpp>
 #include <boost/serialization/access.hpp>
 #include <boost/serialization/vector.hpp>
+#include <boost/serialization/string.hpp>
 #include <boost/serialization/split_free.hpp>
 #include <string>
 #include "Vect.h"
@@ -34,45 +35,29 @@ template<class Archive> void serialize(Archive & ar, Part & p, const unsigned in
     ar & p.m;
     ar & p.h;
     ar & p.e;
-    ar & p.eArray;
     ar & p.r;
     ar & p._vol;
     ar & p.sector;
     ar & p.state;
-    ar & p.shape;
     ar & p.h1;
     ar & p.w1;
 }
 
-template<class Archive> void serialize(Archive & ar, StateMachineFree & v, const unsigned int version)
+template<class Archive> void load(Archive & ar, StateMachineFree & v, const unsigned int version)
 {
     UNUSED(version)
 
-    ar & v._state;
+    string s;
+    ar & s;
+    v.fromString(s);
 }
 
-template<class Archive> void load(Archive & ar, PartArray & v, const unsigned int version)
+template<class Archive> void save(Archive & ar,const StateMachineFree & v, const unsigned int version)
 {
     UNUSED(version)
 
-    ar & v.E1;
-    ar & v.E2;
-    ar & v.eIncrementalTemp;
-    ar & v.size;
-    ar & v.parts;
-
-    v._construct();
-}
-
-template<class Archive> void save(Archive & ar,const PartArray & v, const unsigned int version)
-{
-    UNUSED(version)
-
-    ar & v.E1;
-    ar & v.E2;
-    ar & v.eIncrementalTemp;
-    ar & v.size;
-    ar & v.parts;
+    string s = v.toString();
+    ar & s;
 }
 
 
@@ -88,15 +73,15 @@ template<class Archive> void load(Archive & ar, StateMachine & v, const unsigned
 template<class Archive> void save(Archive & ar,const StateMachine & v, const unsigned int version)
 {
     UNUSED(version)
-
-    ar & v.toString();
+    string s = v.toString();
+    ar & s;
 }
 
 } // namespace serialization
 } // namespace boost
 
-BOOST_SERIALIZATION_SPLIT_FREE(PartArray)
 BOOST_SERIALIZATION_SPLIT_FREE(StateMachine)
+BOOST_SERIALIZATION_SPLIT_FREE(StateMachineFree)
 BOOST_IS_MPI_DATATYPE(Vect)
 
 #endif // PARTARRAYBOOST_H

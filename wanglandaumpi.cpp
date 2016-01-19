@@ -4,7 +4,7 @@ WangLandauMPI::WangLandauMPI(PartArray *system, unsigned int intervals, unsigned
     finishedProcesses(0),
     flatedProcesses(0),
     thisFlatted(false),
-    sys(system->copy()),
+    sys(new PartArray(*system)),
     eMin(0),
     eMax(0),
     gaps(gaps),
@@ -63,7 +63,6 @@ WangLandauMPI::WangLandauMPI(PartArray *system, unsigned int intervals, unsigned
     this->fMin=1.00001;
 
     //Добавляем интервалы в гистограмму
-    qDebug()<<"(init) allocate histogramms";
     for (unsigned i=0;i<intervals;i++){
         g.push_back(0);
         h.push_back(0);
@@ -79,24 +78,13 @@ vector<double> WangLandauMPI::dos()
 {
     if (rank==0) qInfo()<<"prepare to start DOS";
 
-    bool gsWasCalculated=false;
     //считаем минимум и максимум системы
-    if (this->eMin==0 && this->eMax==0){
-        if (rank==0) qDebug()<< "(init) eMin and eMax are not setted; calculating maximal state";
-        sys->setToMaximalState();
-        double max = sys->calcEnergy1();
+    if (sys->Minstate().size()==0 || sys->Maxstate().size()==0)
+        qFatal("Min or max state is unknown. DOS calculation is impossible.");
 
-        if (rank==0) qDebug()<<"(init) calculating ground state";
-        sys->setToGroundState();
-        double min = sys->calcEnergy1();
-
-        this->setMinMaxEnergy(min,max);
-        gsWasCalculated = true;
-    }
+    this->setMinMaxEnergy(sys->EMin(),sys->EMax());
 
     if (rank==0) qInfo()<<"(init) init starting energy";
-    sys->state->hardReset();
-    this->eInit = sys->calcEnergy1FastIncrementalFirst();
 
     //устанавливаем границы волкера
     this->getFromTo(gapNumber,this->from,this->to);
@@ -105,10 +93,7 @@ vector<double> WangLandauMPI::dos()
 
     if (rank==0) qInfo()<<"(init) make normal init state";
 
-    if (gsWasCalculated)
-        this->makeNormalInitStateBothSides();
-    else
-        this->makeNormalInitStateFromGS();
+    this->makeNormalInitStateBothSides();
 
     world.barrier();
     if (rank==0) qInfo()<<"init state completes;";
@@ -166,15 +151,9 @@ vector<double> WangLandauMPI::dos()
 void WangLandauMPI::testDos()
 {
 
-    sys->setToMaximalState();
-    double max = sys->calcEnergy1();
-    sys->setToGroundState();
-    double min = sys->calcEnergy1();
+    this->setMinMaxEnergy(sys->EMin(),sys->EMax());
 
-    this->setMinMaxEnergy(min,max);
-
-    sys->state->hardReset();
-    this->eInit = sys->calcEnergy1FastIncrementalFirst();
+    sys->state.hardReset();
 
     //устанавливаем границы волкера
     this->getFromTo(gapNumber,this->from,this->to);
@@ -188,15 +167,15 @@ void WangLandauMPI::testDos()
 void WangLandauMPI::walk(unsigned stepsPerWalk)
 {
     //qDebug()<<"MC step";
-    double eOld = sys->calcEnergy1FastIncremental(eInit);
+    double eOld = sys->E();
     double eNew;
 
     //повторяем алгоритм сколько-то шагов
     for (unsigned i=1;i<=stepsPerWalk;i++){
 
-        int partNum = sys->state->randomize();
+        int partNum = sys->state.randomize();
 
-        eNew = sys->calcEnergy1FastIncremental(eInit);
+        eNew = sys->E();
 
         double randnum = Random::Instance()->nextDouble();
         if (randnum==0.0)
@@ -220,7 +199,7 @@ unsigned int WangLandauMPI::getIntervalNumber(const double Energy)
 
 double WangLandauMPI::getEnergyByInterval(const unsigned int interval)
 {
-    return dE*(double)interval+eMin;
+    return dE*(double)interval+this->eMin;
 }
 
 bool WangLandauMPI::inRange(const double _E)
@@ -302,11 +281,11 @@ double WangLandauMPI::getG(double e)
 void WangLandauMPI::updateGH(double E)
 {
     if (E==0.){
-        E = this->sys->calcEnergy1FastIncremental(this->eInit);
+        E = this->sys->E();
     }
 
     if (!this->inRange(E)){
-        qFatal("(%d) Error! Trying to add e=%f out of range (%f(%d), %f(%d))",rank,E,from,nFrom,to,nTo);
+        qFatal("Error! Trying to add e=%f out of range (%f(%d), %f(%d)). Real e=%f.",E,from,nFrom,to,nTo,sys->E());
     }
 
     g[this->getIntervalNumber(E)]+=log(f);
@@ -328,8 +307,8 @@ void WangLandauMPI::makeNormalInitState()
 {
     unsigned long int i=0;
     double eTemp=0;
-    while (!inRange(eTemp=sys->calcEnergy1FastIncremental(eInit))){
-        this->sys->state->randomize();
+    while (!inRange(eTemp=sys->E())){
+        this->sys->state.randomize();
         i++;
     }
     qDebug()<<"normalize init state takes "<<i<<" steps";
@@ -341,14 +320,14 @@ void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
     unsigned long int i=0;
     int rotated = 0;
     double eTemp, eTempPrev;
-    eTemp = eTempPrev = sys->calcEnergy1FastIncremental(eInit);
+    eTemp = eTempPrev = sys->E();
 
 
     if (!inRange(eTemp)){ //защита, если система уже в интервале
         do {
             eTempPrev = eTemp;
-            rotated = this->sys->state->randomize();
-            eTemp=sys->calcEnergy1FastIncremental(eInit);
+            rotated = this->sys->state.randomize();
+            eTemp=sys->E();
             if (revert){//если новое состояние ниже, отменяем переворот
                 if (eTemp>eTempPrev){
                     this->sys->parts[rotated]->rotate();
@@ -372,16 +351,12 @@ void WangLandauMPI::makeNormalInitStateBothSides()
 {
     if (gapNumber<=floor(gaps/2.)){
         qDebug("calc from GS");
-        sys->setToGroundState();
-        sys->state->hardReset();
-        this->eInit = sys->calcEnergy1FastIncrementalFirst();
+        sys->setState(sys->Minstate());
 
         this->makeNormalInitStateFromGS(false);
     } else {
         qDebug("calc from maximal");
-        sys->setToMaximalState();
-        sys->state->hardReset();
-        this->eInit = sys->calcEnergy1FastIncrementalFirst();
+        sys->setState(sys->Maxstate());
 
         this->makeNormalInitStateFromGS(true);
     }
@@ -416,9 +391,9 @@ bool WangLandauMPI::recieveSystem()
         world.recv(pair,tag_swapEnergy,ex);
         qDebug("(recv) recieved from %d E=%f(%d)",pair,getEnergyByInterval(ex),ex);
 
-        string newState = this->sys->state->toString();
+        string newState = this->sys->state.toString();
         bool rejected = !this->inRange(ex);
-        ey = this->getIntervalNumber(this->sys->calcEnergy1FastIncremental(this->eInit));
+        ey = this->getIntervalNumber(this->sys->E());
         gjex = this->g[ex];
         gjey = this->g[ey];
         packed_oarchive pack(world);
@@ -444,12 +419,11 @@ bool WangLandauMPI::recieveSystem()
         if (newState.compare("false")==0){
             qDebug()<<QString("(recv) new state rejected by %1").arg(pair);
         } else {
-            sys->state->fromString(newState);
+            sys->state.fromString(newState);
             qDebug()<<
-                       QString("(recv) new state (%2) applied as (%3) from %1")
+                       QString("(recv) new state (%2) applied from %1")
                        .arg(pair)
-                       .arg(newState.c_str())
-                       .arg(sys->state->toString().c_str());
+                       .arg(sys->state.toString().c_str());
             this->updateGH();
             recieved = true;
         }
@@ -467,7 +441,7 @@ void WangLandauMPI::sendSystem(int pair)
         double giex,giey,gjex,gjey;
 
         {
-            double eTemp = this->sys->calcEnergy1FastIncremental(this->eInit);
+            double eTemp = this->sys->E();
             ex = this->getIntervalNumber(eTemp);
             giex = this->g[ex];
             qDebug("(send) offer to exchange with %d, E=%f (%d)", pair, eTemp, ex);
@@ -500,9 +474,9 @@ void WangLandauMPI::sendSystem(int pair)
                 randnum=10e-20;
             randnum = std::log(randnum);
             if (inRange(ey) && randnum <= p){ //если вероятность получилась, отправляем свой конфиг
-                qDebug()<<QString("(send) probability confirmed, send config %3 to %1").arg(pair).arg(sys->state->toString().c_str());
-                world.send(pair,tag_swapConfig,sys->state->toString());
-                sys->state->fromString(newState);
+                qDebug()<<QString("(send) probability confirmed, send config %3 to %1").arg(pair).arg(sys->state.toString().c_str());
+                world.send(pair,tag_swapConfig,sys->state.toString());
+                sys->state.fromString(newState);
                 this->updateGH();
             } else {
                 qDebug()<<QString("(send) probability rejected, send signal %1").arg(pair);
@@ -727,7 +701,6 @@ string WangLandauMPI::dump()
     ss<<"nFrom="<<this->nFrom<<endl;
     ss<<"nTo="<<this->nTo<<endl;
 
-    ss<<"eInit="<<this->eInit<<endl;
     ss<<"gaps="<<this->gaps<<endl;
     ss<<"walkersByGap="<<this->walkersByGap<<endl;
     ss<<"gapNumber="<<this->gapNumber<<endl;
@@ -753,7 +726,7 @@ string WangLandauMPI::dump()
     ss<<endl;
 
     ss<<"system size="<<this->sys->count()<<endl;
-    ss<<"system state="<<this->sys->state->toString()<<endl;
+    ss<<"system state="<<this->sys->state.toString()<<endl;
     return ss.str();
 }
 

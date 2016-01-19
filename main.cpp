@@ -32,18 +32,22 @@ int main(int argc, char *argv[])
     PartArray *sys;
 
     const int
-            width = 50,
-            height = 50,
+            width = 5,
+            height = 5,
             lattice = 1;
     SquareSpinIceArray *ssi = new SquareSpinIceArray();
     ssi->dropSpinIce(width, height, lattice);
+    ssi->setMinstate(ssi->groundState());
+    ssi->setMaxstate(ssi->maximalState());
     sys = ssi;
+    sys->save("system.mfsys");
 
-    qDebug()<<sys->count();
+    if (comm.rank()==0)
+        qDebug()<<sys->count();
 
     const int
             intervals = 1000,
-            gaps = 20;
+            gaps = 3;
 
     const double
             overlap=0.8,
@@ -51,9 +55,10 @@ int main(int argc, char *argv[])
 
 
     WangLandauMPI w(sys, intervals, gaps, overlap, accuracy);
+    comm.barrier();
 
     if (comm.rank()==0) qInfo()<<"start Wang Landau DOS";
-    w.testDos();
+    w.dos();
 
     if (comm.rank()==0) qInfo()<<"WL DOS finished, saving data";
     w.save();
