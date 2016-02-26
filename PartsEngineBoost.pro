@@ -35,16 +35,11 @@ INCLUDEPATH += $$PWD/../partsEngine
 DEPENDPATH += $$PWD/../partsEngine
 PRE_TARGETDEPS += $$PWD/../partsEngine/libPartsEngine.a
 
-CONFIG(debug,debug|release) {
-    SOURCES += main.cpp
-    TEMPLATE = app
-    CONFIG += console
-}
 
+TEMPLATE = lib
+CONFIG += staticlib
+DESTDIR = $$PWD
 CONFIG(release,debug|release){
-    TEMPLATE = lib
-    CONFIG += staticlib
-    DESTDIR = $$PWD
     DEFINES += QT_NO_DEBUG_OUTPUT
 }
-#DEFINES += QT_NO_DEBUG_OUTPUT
+CONFIG += c++11
