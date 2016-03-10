@@ -41,7 +41,7 @@ public:
         ar & this->eMin;
         ar & this->eMax;
         ar & this->eInit;
-        ar & this->eTemp;
+        //ar & this->eTemp;
         ar & this->minstate;
         ar & this->maxstate;
         ar & this->state;
@@ -66,7 +66,7 @@ public:
         ar & this->eMin;
         ar & this->eMax;
         ar & this->eInit;
-        ar & this->eTemp;
+        //ar & this->eTemp;
         ar & this->minstate;
         ar & this->maxstate;
         ar & this->state;
