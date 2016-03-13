@@ -14,6 +14,7 @@
 #include "StateMachine.h"
 #include "StateMachineFree.h"
 #include "PartArray.h"
+#include "dos2.h"
 
 namespace boost {
 namespace serialization {
@@ -75,6 +76,44 @@ template<class Archive> void save(Archive & ar,const StateMachine & v, const uns
     UNUSED(version)
     string s = v.toString();
     ar & s;
+}
+
+template<class Archive, class T> void load(Archive & ar, Dos2<T> & v, const unsigned int version)
+{
+    UNUSED(version)
+    double min,max;
+    unsigned intervals;
+    ar & min;
+    ar & max;
+    ar & intervals;
+    v.resize(min,max,intervals);
+    T temp;
+    for (unsigned i=0; i<intervals; i++){
+        ar & temp;
+        v.at(i) = temp;
+    }
+}
+
+template<class Archive, class T> void save(Archive & ar,const Dos2<T> & v, const unsigned int version)
+{
+    UNUSED(version)
+    double min = v.Min(),max = v.Max();
+    unsigned intervals = v.Intervals();
+    ar & min;
+    ar & max;
+    ar & intervals;
+    for (unsigned i=0; i<v.Intervals(); i++){
+        ar & v.at(i);
+    }
+}
+
+template<class Archive, class T>                         \
+inline void serialize(                          \
+        Archive & ar,                               \
+        Dos2<T> & t,                                      \
+        const unsigned int file_version             \
+){                                              \
+        split_free(ar, t, file_version);            \
 }
 
 } // namespace serialization

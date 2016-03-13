@@ -18,11 +18,13 @@ QMAKE_CC = mpicc
 HEADERS += partarrayboost.h \
     PartArrayMPI.h \
     statemachinegmp.h \
-    wanglandaumpi.h
+    wanglandaumpi.h \
+    gapmanager.h
 
 SOURCES += PartArrayMPI.cpp \
         statemachinegmp.cpp \
-    wanglandaumpi.cpp
+    wanglandaumpi.cpp \
+    gapmanager.cpp
 
 OTHER_FILES += \
     README.md \

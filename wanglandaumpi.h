@@ -8,9 +8,12 @@
 #include <QString>
 #include <QDebug>
 #include <QtDebug>
+#include <iomanip>
 #include "partarrayboost.h"
 #include "random.h"
 #include <boost/mpi.hpp>
+#include "dos2.h"
+#include "gapmanager.h"
 
 using namespace std;
 using namespace boost::mpi;
@@ -18,17 +21,12 @@ using namespace boost::mpi;
 class WangLandauMPI
 {
 public:
-    WangLandauMPI(PartArray *system, unsigned int intervals, unsigned int gaps=10, double overlap=0.75, double accuracy=0.75);
+    WangLandauMPI(PartArray *system, unsigned int intervals, unsigned int gapCount=10, double overlap=0.75, double accuracy=0.75, double fmin=0.00001);
     ~WangLandauMPI();
 
-    vector<double> dos();
+    void run(unsigned steps=10000);
     void testDos(); //Функция для тестирования разных функций в динамике
     void walk(unsigned stepsPerWalk);
-
-    inline unsigned int getIntervalNumber(const double Energy);
-    inline double getEnergyByInterval(const unsigned int interval);
-    inline bool inRange(const double _E);
-    inline bool inRange(const unsigned int _E);
 
     /**
      * @brief processWalk Выполняется только когда h стала плоской
@@ -36,8 +34,6 @@ public:
     void processWalk();
 
     inline bool finished();
-
-    inline double getG(double e);
 
     void updateGH(double E=0.0);
 
@@ -73,8 +69,6 @@ public:
     bool recieveSystem(); //Получить систему из любого узла, неблокирующая операция
     void sendSystem(int pair=-1); //Отправить систему случайному блуждателю своего окна
 
-    void setMinMaxEnergy(double eMin, double eMax);
-
     /**
      * @brief save сохранить гистограммы в файл
      * @param filename Имя файла для сохранения. По умолчанию сохраняет в формате g_<number_of_parts>_<intervals>.dat.
@@ -86,7 +80,7 @@ private:
     void averageMaster(); //хост усреднения
     void averageSlave(int host); // ведомые процессы усреднения
 
-    bool allFinished(); //Возвращает true если все процессы завершили работу.
+    bool allFinished(bool showMessage=true); //Возвращает true если все процессы завершили работу.
     void sygnaliseFinish(); //сообщить всем узлам об окончании
     unsigned int finishedProcesses; //число финишировавших
 
@@ -100,25 +94,14 @@ private:
     void checkStop();
     void callStop();
 
-    inline void setValues(vector<double> &_h, double _v);
-
-    /**
-     * @brief getFromTo Получить индивидуальные границы волкера
-     * @param gap номер интервала, для которого получать границы
-     * @param from Сюда записывается граница "от"
-     * @param to Сюда записывается граница "до"
-     */
-    void getFromTo(double gap, double & from, double & to);
+    inline void resetH();
 
     std::string dump();
 
     PartArray *sys; //экземпляр вычисляемой системы
-    double eMin, eMax, dE, fMin, f;
-    double from,to; //энергетические интервалы текущего блуждателя
-    unsigned int nFrom, nTo; //численные значения интервалов
+    double fMin, f;
 
-    unsigned int gaps, //число энергетических пробелов
-        walkersByGap, //число блуждателей на интервал
+    unsigned int walkersByGap, //число блуждателей на интервал
         gapNumber, //номер интервала, в котором работает текущий блуждатель
         intervals; //число интервалов в плотности состояний
     double overlap,//степень перекрытия энергетических окон
@@ -126,12 +109,14 @@ private:
 
     double average; //подсчитывает среднее число для h
     unsigned hCount; //количество ненулевых элементов h, нужно для подсчета среднего
+    GapManager gaps; //энергетические интервалы
 
     vector<int>
         neightbourWalkers, //валкеры из соседнего окна, для которых возможен обмен
         sameWalkers; //валкеры из того же энергетического окна
 
-    vector<double> h,g;//g - логарифм плотности состояний (энтропия), h - вспомогательная гистограмма, которая должна быть плоской
+    Dos2<double> g;//g - логарифм плотности состояний (энтропия), h - вспомогательная гистограмма, которая должна быть плоской
+    Dos2<unsigned> h;
 
     environment env;
     communicator world;

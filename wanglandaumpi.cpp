@@ -1,19 +1,27 @@
 #include "wanglandaumpi.h"
 
-WangLandauMPI::WangLandauMPI(PartArray *system, unsigned int intervals, unsigned int gaps, double overlap, double accuracy):
+WangLandauMPI::WangLandauMPI(
+        PartArray *system,
+        unsigned int intervals,
+        unsigned int gapCount,
+        double overlap,
+        double accuracy,
+        double fmin
+        ):
     finishedProcesses(0),
     flatedProcesses(0),
     thisFlatted(false),
     sys(new PartArray(*system)),
-    eMin(0),
-    eMax(0),
-    gaps(gaps),
+    fMin(fmin),
     intervals(intervals),
     overlap(overlap),
     accuracy(accuracy),
     average(0.0),
     hCount(0),
     root(0),
+    gaps(gapCount,intervals,overlap),
+    g(0,0,0),
+    h(0,0,0),
 
     tag_swapEnergy(1),
     tag_swapEnergyPack(2),
@@ -30,9 +38,7 @@ WangLandauMPI::WangLandauMPI(PartArray *system, unsigned int intervals, unsigned
     size = world.size();
     rank = world.rank();
 
-    //@todo Выдавать ошибку если валкеров на гап хотя бы меньше чем три
-
-    if (size%gaps!=0) {
+    if (size%gapCount!=0) {
         qFatal("Error! Process number is not divisible to gap number.");
     }
 
@@ -40,16 +46,16 @@ WangLandauMPI::WangLandauMPI(PartArray *system, unsigned int intervals, unsigned
         qFatal("Error! The system is empty.");
     }
 
-    walkersByGap = floor(size/gaps);
+    walkersByGap = floor(size/gapCount);
 
     if (walkersByGap<3){
-        qFatal("Too small number of processes, minimal is %d", gaps*3);
+        qFatal("Too small number of processes, minimal is %d", gapCount*3);
     }
 
     gapNumber = floor(rank/walkersByGap);
 
     //Определяем соседние узлы следующего (соседнего) окна. Для последнего окна соседей не будет (принимает от предыдущих)
-    if (gapNumber!=gaps-1) {
+    if (gapNumber!=gapCount-1) {
         for (unsigned int i=0;i<walkersByGap;i++)
             neightbourWalkers.push_back((gapNumber+1)*walkersByGap+i);
     }
@@ -58,46 +64,31 @@ WangLandauMPI::WangLandauMPI(PartArray *system, unsigned int intervals, unsigned
     for (unsigned int i=0;i<walkersByGap;i++)
         sameWalkers.push_back(gapNumber*walkersByGap+i);
 
-
     this->f = exp(1);
-    this->fMin=1.00001;
-
-    //Добавляем интервалы в гистограмму
-    for (unsigned i=0;i<intervals;i++){
-        g.push_back(0);
-        h.push_back(0);
-    }
-}
-
-WangLandauMPI::~WangLandauMPI()
-{
-
-}
-
-vector<double> WangLandauMPI::dos()
-{
-    if (rank==0) qInfo()<<"prepare to start DOS";
 
     //считаем минимум и максимум системы
     if (sys->Minstate().size()==0 || sys->Maxstate().size()==0)
         qFatal("Min or max state is unknown. DOS calculation is impossible.");
 
-    this->setMinMaxEnergy(sys->EMin(),sys->EMax());
+    //инициируем DOS
+    h = Dos2<unsigned>(sys->E(sys->Minstate()), sys->E(sys->Maxstate()), intervals);
+    g = Dos2<double>(sys->E(sys->Minstate()), sys->E(sys->Maxstate()),intervals);
+}
 
-    if (rank==0) qInfo()<<"(init) init starting energy";
+WangLandauMPI::~WangLandauMPI()
+{
+    delete sys;
+}
 
-    //устанавливаем границы волкера
-    this->getFromTo(gapNumber,this->from,this->to);
-    this->nFrom = getIntervalNumber(this->from);
-    this->nTo = getIntervalNumber(this->to);
-
+void WangLandauMPI::run(unsigned steps)
+{
     if (rank==0) qInfo()<<"(init) make normal init state";
 
     this->makeNormalInitStateBothSides();
 
     world.barrier();
     if (rank==0) qInfo()<<"init state completes;";
-    if (rank==0) qInfo()<<"start DOS";
+    if (rank==0) qInfo()<<"start DOS with"<<steps<<"steps per single walk";
 
     bool continueFlag=true;
     //выполняем несколько шагов WL на каждом walker'е. Каждый walker имеет свой критерий плоскости
@@ -105,7 +96,7 @@ vector<double> WangLandauMPI::dos()
         checkStop();
 
         //qDebug()<<rank<<"start step";
-        this->walk(10000);
+        this->walk(steps);
 
         if (this->checkFlat() && !this->thisFlatted) //проверяем на плоскость
             this->sygnaliseFlat();
@@ -141,24 +132,17 @@ vector<double> WangLandauMPI::dos()
             sleep(1);
             this->recieveSystem(); //получаем все сообщения перед выходом
 
-            return this->g;
+            return;
         }
 
     }
-    return this->g;
+    return;
 }
 
 void WangLandauMPI::testDos()
 {
 
-    this->setMinMaxEnergy(sys->EMin(),sys->EMax());
-
     sys->state.hardReset();
-
-    //устанавливаем границы волкера
-    this->getFromTo(gapNumber,this->from,this->to);
-    this->nFrom = getIntervalNumber(this->from);
-    this->nTo = getIntervalNumber(this->to);
 
     qDebug("Normalize states");
 
@@ -182,7 +166,7 @@ void WangLandauMPI::walk(unsigned stepsPerWalk)
             randnum=10e-20;
         randnum = std::log(randnum);
 
-        if (inRange(eNew) && randnum <= this->getG(eOld)-this->getG(eNew) ) {
+        if (gaps.inRange(g.num(eNew),gapNumber) && randnum <= this->g[eOld] - this->g[eNew] ) {
             eOld = eNew;
         } else {
             sys->parts[partNum]->rotate(); //откатываем состояние
@@ -190,27 +174,6 @@ void WangLandauMPI::walk(unsigned stepsPerWalk)
 
         this->updateGH(eOld);
     }
-}
-
-unsigned int WangLandauMPI::getIntervalNumber(const double Energy)
-{
-    return floor((Energy-this->eMin)/this->dE);
-}
-
-double WangLandauMPI::getEnergyByInterval(const unsigned int interval)
-{
-    return dE*(double)interval+this->eMin;
-}
-
-bool WangLandauMPI::inRange(const double _E)
-{
-    unsigned _ir = getIntervalNumber(_E);
-    return _ir<=nTo && _ir>=nFrom;
-}
-
-bool WangLandauMPI::inRange(const unsigned int _E)
-{
-    return _E<=nTo && _E>=nFrom;
 }
 
 bool WangLandauMPI::checkFlat()
@@ -222,9 +185,8 @@ bool WangLandauMPI::checkFlat()
         average = this->calcAverageH();
     }
 
-    iter = h.begin()+nFrom;
-    while (iter!=h.begin()+this->nTo+1){ //плоскость гистограммы только в своем интервале
-        if ((*iter)!=0. && fabs(*iter-average)/average > (1.0 - accuracy)) //критерий плоскости
+    for (unsigned i=gaps.from(gapNumber); i<=gaps.to(gapNumber); i++){//плоскость гистограммы только в своем интервале
+        if (h.at(i)!=0. && fabs(h.at(i)-average)/average > (1.0 - accuracy)) //критерий плоскости
             return false;
         iter++;
     }
@@ -256,7 +218,7 @@ void WangLandauMPI::sygnaliseFlat()
 void WangLandauMPI::processWalk()
 {
     bool beforeFinished = this->finished();
-    setValues(h,0); //обнуляем гистограмму
+    resetH(); //обнуляем гистограмму
     f=sqrt(f);
     average = 0;
     hCount = 0;
@@ -273,26 +235,28 @@ bool WangLandauMPI::finished()
     return f<=fMin;
 }
 
-double WangLandauMPI::getG(double e)
-{
-    return this->g[this->getIntervalNumber(e)];
-}
-
 void WangLandauMPI::updateGH(double E)
 {
     if (E==0.){
         E = this->sys->E();
     }
 
-    if (!this->inRange(E)){
-        qFatal("Error! Trying to add e=%f out of range (%f(%d), %f(%d)). Real e=%f.",E,from,nFrom,to,nTo,sys->E());
+    if (!gaps.inRange(g.num(E),gapNumber)){
+        qFatal(
+                    "Error! Trying to add e=%f out of range (%f(%d), %f(%d)). Real e=%f.",
+                    E,
+                    g.val(gaps.from(gapNumber)),
+                    (int)gaps.from(gapNumber),
+                    g.val(gaps.to(gapNumber)),
+                    (int)gaps.to(gapNumber),
+                    sys->E());
     }
 
-    g[this->getIntervalNumber(E)]+=log(f);
+    g[E]+=log(f);
 
-    bool increased = (h[this->getIntervalNumber(E)]+=1) == 1;
+    bool increased = (h[E]+=1) == 1;
 
-    if (inRange(E)){//считаем среднее только в разрешенном интервале
+    if (gaps.inRange(h.num(E),gapNumber)){//считаем среднее только в разрешенном интервале
         if (increased){ //прибавляем h и одновременно считаем среднее значение
             //случай если изменилось число ненулевых элементов
             hCount++;
@@ -307,7 +271,7 @@ void WangLandauMPI::makeNormalInitState()
 {
     unsigned long int i=0;
     double eTemp=0;
-    while (!inRange(eTemp=sys->E())){
+    while (!gaps.inRange(g.num(eTemp=sys->E()),gapNumber)){
         this->sys->state.randomize();
         i++;
     }
@@ -323,7 +287,7 @@ void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
     eTemp = eTempPrev = sys->E();
 
 
-    if (!inRange(eTemp)){ //защита, если система уже в интервале
+    if (!gaps.inRange(g.num(eTemp),gapNumber)){ //защита, если система уже в интервале
         do {
             eTempPrev = eTemp;
             rotated = this->sys->state.randomize();
@@ -340,7 +304,7 @@ void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
                 }
             }
             i++;
-        } while (!inRange(eTemp));
+        } while (!gaps.inRange(g.num(eTemp),gapNumber));
     }
 
     qDebug()<<"normalize init state takes "<<i<<" steps";
@@ -349,7 +313,7 @@ void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
 
 void WangLandauMPI::makeNormalInitStateBothSides()
 {
-    if (gapNumber<=floor(gaps/2.)){
+    if (gapNumber<=floor(gaps.Gaps()/2.)){
         qDebug("calc from GS");
         sys->setState(sys->Minstate());
 
@@ -367,13 +331,11 @@ double WangLandauMPI::calcAverageH()
     double avg=0;
     //считаем среднее значение
     int step=0;
-    vector<double>::iterator iter = h.begin()+this->getIntervalNumber(this->from);
-    while (iter!=h.begin()+this->getIntervalNumber(this->to)+1){ //плоскость гистограммы только в своем интервале
-        if (*iter != 0){
-            avg = (avg*step+(*iter))/(step+1);
+    for (unsigned i=gaps.from(gapNumber); i<=gaps.to(gapNumber); i++ ){//плоскость гистограммы только в своем интервале
+        if (h.at(i) != 0){
+            avg = (avg*step+h.at(i))/(step+1);
             step++;
         }
-        iter++;
     }
     return avg;
 }
@@ -384,16 +346,16 @@ bool WangLandauMPI::recieveSystem()
     while (boost::optional<status> s = this->world.iprobe(any_source,tag_swapEnergy)){ //получаем все входящие сообщения
         //qDebug()<<"Recieve system: signal found from"<<(*s).source();
         int pair = (*s).source();
-        unsigned ex,ey;
+        double ex,ey;
         double gjex,gjey;
 
         qDebug()<<QString("(recv) recieve pair energy from %1").arg(pair);
         world.recv(pair,tag_swapEnergy,ex);
-        qDebug("(recv) recieved from %d E=%f(%d)",pair,getEnergyByInterval(ex),ex);
+        qDebug("(recv) recieved from %d E=%f",pair,ex);
 
         string newState = this->sys->state.toString();
-        bool rejected = !this->inRange(ex);
-        ey = this->getIntervalNumber(this->sys->E());
+        bool rejected = !this->gaps.inRange(g.num(ex),gapNumber);
+        ey = this->sys->E();
         gjex = this->g[ex];
         gjey = this->g[ey];
         packed_oarchive pack(world);
@@ -403,19 +365,24 @@ bool WangLandauMPI::recieveSystem()
         pack<<gjey;
         pack<<newState;
 
+
+        world.send(pair,tag_swapEnergyPack,pack);
         if (rejected){
             qDebug()<<QString("(recv) send that energy not in range %1").arg(pair);
-            world.send(pair,tag_swapEnergyPack,pack);
             return recieved;
         } else {
             qDebug()<<QString("(recv) send energypack to %1").arg(pair);
-            world.send(pair,tag_swapEnergyPack,pack);
         }
 
         qDebug()<<QString("(recv) waiting for new state from %1").arg(pair);
 
+        //ждем ответ, параллельно проверяем завершились ли остальные процессы
+        boost::mpi::request r = world.irecv(pair,tag_swapConfig,newState);
+        while (!r.test()){
+            if (this->allFinished(false))
+                return false;
+        }
 
-        world.recv(pair,tag_swapConfig,newState);
         if (newState.compare("false")==0){
             qDebug()<<QString("(recv) new state rejected by %1").arg(pair);
         } else {
@@ -437,14 +404,13 @@ void WangLandauMPI::sendSystem(int pair)
         if (pair==(-1))
             pair = neightbourWalkers[Random::Instance()->next(neightbourWalkers.size())];
 
-        unsigned ex,ey;
+        double ex,ey;
         double giex,giey,gjex,gjey;
 
         {
-            double eTemp = this->sys->E();
-            ex = this->getIntervalNumber(eTemp);
+            ex = this->sys->E();
             giex = this->g[ex];
-            qDebug("(send) offer to exchange with %d, E=%f (%d)", pair, eTemp, ex);
+            qDebug("(send) offer to exchange with %d, E=%f", pair, ex);
         }
 
         //отправлем свою энергию и ждем пока блуждатель ответит
@@ -453,7 +419,12 @@ void WangLandauMPI::sendSystem(int pair)
         //получаем ответ
         qDebug()<<QString("(send) waiting for energypack from %1").arg(pair);
         packed_iarchive pack(world);
-        world.recv(pair,tag_swapEnergyPack,pack);
+        //ждем ответ, параллельно проверяем завершились ли остальные процессы
+        boost::mpi::request r = world.irecv(pair,tag_swapEnergyPack,pack);
+        while (!r.test()){
+            if (this->allFinished(false))
+                return;
+        }
 
         bool rejected; string newState;
         pack>>rejected;
@@ -473,8 +444,8 @@ void WangLandauMPI::sendSystem(int pair)
             if (0.0==randnum) //логарифма нуля не существует
                 randnum=10e-20;
             randnum = std::log(randnum);
-            if (inRange(ey) && randnum <= p){ //если вероятность получилась, отправляем свой конфиг
-                qDebug()<<QString("(send) probability confirmed, send config %3 to %1").arg(pair).arg(sys->state.toString().c_str());
+            if (gaps.inRange(g.num(ey),gapNumber) && randnum <= p){ //если вероятность получилась, отправляем свой конфиг
+                qDebug()<<QString("(send) probability confirmed, send config %2 to %1").arg(pair).arg(sys->state.toString().c_str());
                 world.send(pair,tag_swapConfig,sys->state.toString());
                 sys->state.fromString(newState);
                 this->updateGH();
@@ -485,19 +456,6 @@ void WangLandauMPI::sendSystem(int pair)
             }
         }
     }
-}
-
-void WangLandauMPI::setMinMaxEnergy(double eMin, double eMax)
-{
-    //Выставляем границы
-    this->eMin = eMin;
-    this->eMax = eMax;
-
-    //слегка расширяем границы, дабы нормально работало сравнение double
-    double delta=(this->eMax-this->eMin)*0.01/(double)(intervals-1);
-    this->eMax+=delta; this->eMin-=delta;
-
-    this->dE = (this->eMax-this->eMin)/(intervals-1);
 }
 
 void WangLandauMPI::averageHistogramms()
@@ -515,12 +473,12 @@ void WangLandauMPI::averageMaster()
 {
     qDebug()<<"average as master";
 
-    vector< vector<double> > allG; //массив где будут храниться все гистограммы
+    vector< Dos2<double> > allG; //массив где будут храниться все гистограммы
     allG.push_back(this->g); //добавляем свою гистограмму
 
     //получаем все остальные гистограммы
     for (unsigned int i=0;i<sameWalkers.size()-1;i++){
-        vector<double> tempG;
+        Dos2<double> tempG(0,0,0);
         this->world.recv(any_source,tag_averageHistogramm,tempG);
         allG.push_back(tempG);
     }
@@ -530,10 +488,10 @@ void WangLandauMPI::averageMaster()
     for (unsigned i=0;i<this->intervals;i++){
         average=0;
         for (unsigned j=0;j<allG.size();j++){
-            average = (average * (double)j + allG[j][i]) / (double)(j+1);
+            average = (average * (double)j + allG[j].at(i)) / (double)(j+1);
         }
 
-        this->g[i] = average;
+        this->g.at(i) = average;
     }
 
     //отплавляем всем гистограммы
@@ -551,7 +509,7 @@ void WangLandauMPI::averageSlave(int host)
     world.recv(host,tag_averagedHistogramm,this->g);
 }
 
-bool WangLandauMPI::allFinished()
+bool WangLandauMPI::allFinished(bool showMessage)
 {
     while (boost::optional<status> s = this->world.iprobe(any_source,tag_finish)){
         int buff=0;
@@ -559,7 +517,8 @@ bool WangLandauMPI::allFinished()
         finishedProcesses++;
     }
 
-    qDebug("(%d) check finished: %d",rank,finishedProcesses);
+    if (showMessage)
+        qDebug("(%d) check finished: %d",rank,finishedProcesses);
     return finishedProcesses==(unsigned)size;
 }
 
@@ -586,47 +545,43 @@ void WangLandauMPI::save(string filename)
     } else {
         QString fname = QString::fromStdString(filename);
         if (fname=="")
-            fname=QString("g_%1_%2.dat").arg(sys->count()).arg(intervals);
+            fname=QString("g_%1_%2_%3_%4_%5.dat")
+                    .arg(sys->count())
+                    .arg(intervals)
+                    .arg(gaps.Gaps())
+                    .arg(overlap)
+                    .arg(accuracy);
         ofstream f(fname.toStdString().c_str());
 
-        f<<"eMin="<<this->eMin<<endl;
-        f<<"eMax="<<this->eMax<<endl;
-        f<<"dE="<<this->dE<<endl;
+        f<<"eMin="<<sys->EMin()<<endl;
+        f<<"eMax="<<sys->EMax()<<endl;
         f<<"intervals="<<this->intervals<<endl;
-        f<<"gaps="<<this->gaps<<endl;
+        f<<"gaps="<<this->gaps.Gaps()<<endl;
         f<<"walkers="<<size<<endl;
         f<<"walkersByGap="<<this->walkersByGap<<endl;
         f<<"from=";
-        for (unsigned i=0;i<gaps;i++){
-            double from,to;
-            this->getFromTo(i,from,to);
-            f<<from<<",";
+        for (unsigned i=0;i<gaps.Gaps();i++){
+            f<<h.val(gaps.from(i))<<",";
         }
         f<<endl;
         f<<"to=";
-        for (unsigned i=0;i<gaps;i++){
-            double from,to;
-            this->getFromTo(i,from,to);
-            f<<to<<",";
+        for (unsigned i=0;i<gaps.Gaps();i++){
+            f<<h.val(gaps.to(i))<<",";
         }
         f<<endl;
         f<<"nfrom=";
-        for (unsigned i=0;i<gaps;i++){
-            double from,to;
-            this->getFromTo(i,from,to);
-            f<<getIntervalNumber(from)<<",";
+        for (unsigned i=0;i<gaps.Gaps();i++){
+            f<<gaps.from(i)<<",";
         }
         f<<endl;
         f<<"nto=";
-        for (unsigned i=0;i<gaps;i++){
-            double from,to;
-            this->getFromTo(i,from,to);
-            f<<getIntervalNumber(to)<<",";
+        for (unsigned i=0;i<gaps.Gaps();i++){
+            f<<gaps.to(i)<<",";
         }
         f<<endl;
 
         for (int i=0;i<size;i++){
-            vector<double> gg;
+            Dos2<double> gg(0,0,0);
             int sourceNode=0;
             if (i==0){
                 gg = this->g;
@@ -637,11 +592,8 @@ void WangLandauMPI::save(string filename)
             }
             f<<"-----"<<endl;
             f<<sourceNode<<endl;
-            vector<double>::iterator iter=gg.begin();
-            int j=0;
-            while (iter!=gg.end()){
-                f<<j<<"\t"<<this->getEnergyByInterval(j)<<"\t"<<*iter<<endl;
-                iter++; j++;
+            for (unsigned i=0;i<gg.Intervals();i++){
+                f<<i<<"\t"<<gg.val(i)<<"\t"<<gg.at(i)<<endl;
             }
         }
         f.close();
@@ -668,40 +620,31 @@ void WangLandauMPI::callStop()
     std::exit(0);
 }
 
-void WangLandauMPI::setValues(vector<double> &_h, double _v)
+void WangLandauMPI::resetH()
 {
-    vector<double>::iterator _i = _h.begin();
-    while (_i!=_h.end()){
-        (*_i)=_v;
-        _i++;
+    for (unsigned i=0; i<h.Intervals(); i++){
+        h.at(i)=0;
     }
-}
-
-void WangLandauMPI::getFromTo(double gap, double &from, double &to)
-{
-    double x = (this->eMax-this->eMin)/((double)gaps*(1.-overlap)+overlap); //ширина одного интервала
-    from = this->eMin + gap * x * (1.-overlap);
-    to = from+x;
 }
 
 string WangLandauMPI::dump()
 {
     stringstream ss;
+    ss<<std::setprecision (15);
     ss<<"rank="<<rank<<endl;
     ss<<"size="<<size<<endl;
-    ss<<"eMin="<<this->eMin<<endl;
-    ss<<"eMax="<<this->eMax<<endl;
-    ss<<"dE="<<this->dE<<endl;
-    ss<<"fMin="<<this->fMin<<endl;
-    ss<<"f="<<this->f<<endl;
+    ss<<"eMin="<<sys->EMin()<<endl;
+    ss<<"eMax="<<sys->EMax()<<endl;
+    ss<<"fMin=" <<this->fMin<<endl;
+    ss<<"f=" <<this->f<<endl;
 
-    ss<<"from="<<this->from<<endl;
-    ss<<"to="<<this->to<<endl;
+    ss<<"from="<<g.val(gaps.from(gapNumber))<<endl;
+    ss<<"to="<<g.val(gaps.to(gapNumber))<<endl;
 
-    ss<<"nFrom="<<this->nFrom<<endl;
-    ss<<"nTo="<<this->nTo<<endl;
+    ss<<"nFrom="<<gaps.from(gapNumber)<<endl;
+    ss<<"nTo="<<gaps.to(gapNumber)<<endl;
 
-    ss<<"gaps="<<this->gaps<<endl;
+    ss<<"gaps="<<this->gaps.Gaps()<<endl;
     ss<<"walkersByGap="<<this->walkersByGap<<endl;
     ss<<"gapNumber="<<this->gapNumber<<endl;
     ss<<"intervals="<<this->intervals<<endl;
