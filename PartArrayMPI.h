@@ -111,3 +111,4 @@ private:
 BOOST_CLASS_VERSION(PartArrayMPI, 1)
 
 #endif // PARTARRAY_H
+//
