@@ -64,8 +64,6 @@ WangLandauMPI::WangLandauMPI(
     for (unsigned int i=0;i<walkersByGap;i++)
         sameWalkers.push_back(gapNumber*walkersByGap+i);
 
-    this->f = exp(1);
-
     //считаем минимум и максимум системы
     if (sys->Minstate().size()==0 || sys->Maxstate().size()==0)
         qFatal("Min or max state is unknown. DOS calculation is impossible.");
@@ -85,6 +83,8 @@ void WangLandauMPI::run(unsigned steps)
     if (rank==0) qInfo()<<"(init) make normal init state";
 
     this->makeNormalInitStateBothSides();
+
+    this->f = exp(1);
 
     world.barrier();
     if (rank==0) qInfo()<<"init state completes;";
@@ -179,7 +179,6 @@ void WangLandauMPI::walk(unsigned stepsPerWalk)
 bool WangLandauMPI::checkFlat()
 {
     qDebug()<<"check the flattiness of h";
-    vector<double>::iterator iter;
 
     if (average==0.0){
         average = this->calcAverageH();
@@ -188,7 +187,6 @@ bool WangLandauMPI::checkFlat()
     for (unsigned i=gaps.from(gapNumber); i<=gaps.to(gapNumber); i++){//плоскость гистограммы только в своем интервале
         if (h.at(i)!=0. && fabs(h.at(i)-average)/average > (1.0 - accuracy)) //критерий плоскости
             return false;
-        iter++;
     }
     return true;
 }
