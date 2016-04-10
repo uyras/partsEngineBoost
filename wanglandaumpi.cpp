@@ -169,7 +169,7 @@ void WangLandauMPI::walk(unsigned stepsPerWalk)
         if (gaps.inRange(g.num(eNew),gapNumber) && randnum <= this->g[eOld] - this->g[eNew] ) {
             eOld = eNew;
         } else {
-            sys->parts[partNum]->rotate(); //откатываем состояние
+            sys->parts[partNum]->rotate(true); //откатываем состояние
         }
 
         this->updateGH(eOld);

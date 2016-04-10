@@ -2,7 +2,7 @@
 
 void StateMachineGmp::add(const cpp_int & b)
 {
-    std::vector<bool>::iterator iter = this->_state.begin();
+    std::vector<char>::iterator iter = this->_state.begin();
 
     unsigned i=0;
     unsigned short int m=0;
