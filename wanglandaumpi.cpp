@@ -82,7 +82,7 @@ void WangLandauMPI::run(unsigned steps)
 {
     if (rank==0) qInfo()<<"(init) make normal init state";
 
-    this->makeNormalInitStateBothSides();
+    this->makeNormalInitStateFromGS();
 
     this->f = exp(1);
 
@@ -311,7 +311,7 @@ void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
 
 void WangLandauMPI::makeNormalInitStateBothSides()
 {
-    if (gapNumber<=floor(gaps.Gaps()/2.)){
+    if (gapNumber<=floor(gaps.Gaps()/2)){
         qDebug("calc from GS");
         sys->setState(sys->Minstate());
 
