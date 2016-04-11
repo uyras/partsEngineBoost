@@ -82,7 +82,7 @@ void WangLandauMPI::run(unsigned steps)
 {
     if (rank==0) qInfo()<<"(init) make normal init state";
 
-    this->makeNormalInitStateFromGS();
+    this->makeNormalInitStateBothSides();
 
     this->f = exp(1);
 
@@ -305,7 +305,8 @@ void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
         } while (!gaps.inRange(g.num(eTemp),gapNumber));
     }
 
-    qDebug()<<"normalize init state takes "<<i<<" steps";
+    qDebug()<<"normalize init state takes "<<i<<" steps, E="<<eTemp<<
+              " ("<<g.val(gaps.from(gapNumber))<<";"<<g.val(gaps.to(gapNumber+1))<<")";
     this->updateGH(eTemp);
 }
 
