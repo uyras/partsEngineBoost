@@ -36,7 +36,7 @@ public:
         ar & sysSize;
         double ir = this->interactionRange();
         ar & ir;
-        for (int i=0; i<this->size(); i++)
+        for (unsigned i=0; i<this->size(); i++)
             ar & (*this).parts[i];
         ar & this->eMin;
         ar & this->eMax;

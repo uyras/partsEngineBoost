@@ -18,10 +18,10 @@ WangLandauMPI::WangLandauMPI(
     accuracy(accuracy),
     average(0.0),
     hCount(0),
-    root(0),
     gaps(gapCount,intervals,overlap),
     g(0,0,0),
     h(0,0,0),
+    root(0),
 
     tag_swapEnergy(1),
     tag_swapEnergyPack(2),

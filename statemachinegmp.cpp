@@ -46,12 +46,12 @@ StateMachineGmp::StateMachineGmp(const cpp_int &b)
     this->add(b);
 }
 
-StateMachineGmp::StateMachineGmp(const StateMachine &state):StateMachineFree(state)
+StateMachineGmp::StateMachineGmp(const StateMachineBase &state):StateMachineFree(state)
 {
 
 }
 
-StateMachineGmp::StateMachineGmp(const StateMachine *state):StateMachineFree(*state)
+StateMachineGmp::StateMachineGmp(const StateMachineBase *state):StateMachineFree(*state)
 {
 
 }

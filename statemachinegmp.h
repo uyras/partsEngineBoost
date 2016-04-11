@@ -13,8 +13,8 @@ public:
     StateMachineGmp();
     StateMachineGmp(const unsigned long int size);
     StateMachineGmp(const cpp_int & b);
-    StateMachineGmp(const StateMachine &state);
-    StateMachineGmp(const StateMachine *state);
+    StateMachineGmp(const StateMachineBase &state);
+    StateMachineGmp(const StateMachineBase *state);
 
     void add(const cpp_int & b);
     StateMachineGmp &operator += (const cpp_int &b);
