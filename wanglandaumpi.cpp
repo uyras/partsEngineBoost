@@ -78,16 +78,16 @@ WangLandauMPI::~WangLandauMPI()
     delete sys;
 }
 
-void WangLandauMPI::run(unsigned steps)
+void WangLandauMPI::run(unsigned stepCount)
 {
 
     if (!gaps.inRange(g.num(sys->E()),gapNumber))
         qFatal("Init state is not in range");
 
-    this->f = exp(1);
+    this->f = std::exp(1);
 
     world.barrier();
-    if (rank==0) qInfo()<<"start DOS with"<<steps<<"steps per single walk";
+    if (rank==0) cout<<"start DOS with "<<stepCount<<" steps per single walk"<<endl;
 
     bool continueFlag=true;
     //выполняем несколько шагов WL на каждом walker'е. Каждый walker имеет свой критерий плоскости
@@ -95,7 +95,7 @@ void WangLandauMPI::run(unsigned steps)
         checkStop();
 
         //qDebug()<<rank<<"start step";
-        this->walk(steps);
+        this->walk(stepCount);
 
         if (this->checkFlat() && !this->thisFlatted) //проверяем на плоскость
             this->sygnaliseFlat();
@@ -301,23 +301,25 @@ void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
                 }
             }
             //если случайно проскочили энергию, меняем направление работы
-            if (revert) {
-                if (g.num(eTemp)<gaps.from(i))
+            if (revert==true) {
+                if ((g.num(eTemp)) < (gaps.from(gapNumber))){
                     revert=!revert;
+                }
             } else {
-                if (g.num(eTemp)>gaps.to(i))
+                if ((g.num(eTemp)) > (gaps.to(gapNumber))){
                     revert=!revert;
+                }
             }
 
             i++;
             if (i==1000000)
                 qInfo()<<"init state makes too long on gap "<<gapNumber<<", E="<<eTemp<<
-                         " ("<<g.val(gaps.from(gapNumber))<<";"<<g.val(gaps.to(gapNumber+1))<<")";
+                         " ("<<g.val(gaps.from(gapNumber))<<";"<<g.val(gaps.to(gapNumber)+1)<<")";
         } while (!gaps.inRange(g.num(eTemp),gapNumber));
     }
 
     qDebug()<<"normalize init state takes "<<i<<" steps, E="<<eTemp<<
-              " ("<<g.val(gaps.from(gapNumber))<<";"<<g.val(gaps.to(gapNumber+1))<<")";
+              " ("<<g.val(gaps.from(gapNumber))<<";"<<g.val(gaps.to(gapNumber)+1)<<")";
     this->updateGH(eTemp);
 }
 

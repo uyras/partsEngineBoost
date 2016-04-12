@@ -24,7 +24,7 @@ public:
     WangLandauMPI(PartArray *system, unsigned int intervals, unsigned int gapCount=10, double overlap=0.75, double accuracy=0.75, double fmin=0.00001);
     ~WangLandauMPI();
 
-    void run(unsigned steps=10000);
+    void run(unsigned stepCount=10000);
     void testDos(); //Функция для тестирования разных функций в динамике
     void walk(unsigned stepsPerWalk);
 
