@@ -289,17 +289,26 @@ void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
             eTempPrev = eTemp;
             rotated = this->sys->state.randomize();
             eTemp=sys->E();
-            if (revert){//если новое состояние ниже, отменяем переворот
+            if (revert){//идем сверху вниз по энергии: если новое состояние выше, отменяем переворот
                 if (eTemp>eTempPrev){
                     this->sys->parts[rotated]->rotate();
                     eTemp = eTempPrev;
                 }
-            } else {
+            } else {//идем снизу вверх по энергии: если новое состояние ниже, отменяем переворот
                 if (eTemp<eTempPrev){
                     this->sys->parts[rotated]->rotate();
                     eTemp = eTempPrev;
                 }
             }
+            //если случайно проскочили энергию, меняем направление работы
+            if (revert) {
+                if (g.num(eTemp)<gaps.from(i))
+                    revert=!revert;
+            } else {
+                if (g.num(eTemp)>gaps.to(i))
+                    revert=!revert;
+            }
+
             i++;
             if (i==1000000)
                 qInfo()<<"init state makes too long on gap "<<gapNumber<<", E="<<eTemp<<
