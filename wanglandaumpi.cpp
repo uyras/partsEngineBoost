@@ -80,14 +80,13 @@ WangLandauMPI::~WangLandauMPI()
 
 void WangLandauMPI::run(unsigned steps)
 {
-    if (rank==0) qInfo()<<"(init) make normal init state";
 
-    this->makeNormalInitStateBothSides();
+    if (!gaps.inRange(g.num(sys->E()),gapNumber))
+        qFatal("Init state is not in range");
 
     this->f = exp(1);
 
     world.barrier();
-    if (rank==0) qInfo()<<"init state completes;";
     if (rank==0) qInfo()<<"start DOS with"<<steps<<"steps per single walk";
 
     bool continueFlag=true;
@@ -302,6 +301,9 @@ void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
                 }
             }
             i++;
+            if (i==1000000)
+                qInfo()<<"init state makes too long on gap "<<gapNumber<<", E="<<eTemp<<
+                         " ("<<g.val(gaps.from(gapNumber))<<";"<<g.val(gaps.to(gapNumber+1))<<")";
         } while (!gaps.inRange(g.num(eTemp),gapNumber));
     }
 
