@@ -13,6 +13,7 @@ WangLandauMPI::WangLandauMPI(
     thisFlatted(false),
     sys(new PartArray(*system)),
     fMin(fmin),
+    f(0),
     intervals(intervals),
     overlap(overlap),
     accuracy(accuracy),
