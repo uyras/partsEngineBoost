@@ -69,8 +69,8 @@ WangLandauMPI::WangLandauMPI(
         qFatal("Min or max state is unknown. DOS calculation is impossible.");
 
     //инициируем DOS
-    h = Dos2<unsigned>(sys->E(sys->Minstate()), sys->E(sys->Maxstate()), intervals);
-    g = Dos2<double>(sys->E(sys->Minstate()), sys->E(sys->Maxstate()),intervals);
+    h.resize(sys->E(sys->Minstate()), sys->E(sys->Maxstate()), intervals);
+    g.resize(sys->E(sys->Minstate()), sys->E(sys->Maxstate()), intervals);
 }
 
 WangLandauMPI::~WangLandauMPI()
@@ -85,6 +85,7 @@ void WangLandauMPI::run(unsigned stepCount)
         qFatal("Init state is not in range");
 
     this->f = std::exp(1);
+    this->updateGH(sys->E());
 
     world.barrier();
     if (rank==0) cout<<"start DOS with "<<stepCount<<" steps per single walk"<<endl;
@@ -92,6 +93,7 @@ void WangLandauMPI::run(unsigned stepCount)
     bool continueFlag=true;
     //выполняем несколько шагов WL на каждом walker'е. Каждый walker имеет свой критерий плоскости
     while (continueFlag){
+
         checkStop();
 
         //qDebug()<<rank<<"start step";
@@ -153,6 +155,8 @@ void WangLandauMPI::walk(unsigned stepsPerWalk)
     double eOld = sys->E();
     double eNew;
 
+    unsigned accepted=0, reverted=0;
+
     //повторяем алгоритм сколько-то шагов
     for (unsigned i=1;i<=stepsPerWalk;i++){
 
@@ -167,12 +171,16 @@ void WangLandauMPI::walk(unsigned stepsPerWalk)
 
         if (gaps.inRange(g.num(eNew),gapNumber) && randnum <= this->g[eOld] - this->g[eNew] ) {
             eOld = eNew;
+            accepted++;
         } else {
             sys->parts[partNum]->rotate(true); //откатываем состояние
+            reverted++;
         }
 
         this->updateGH(eOld);
     }
+
+    qDebug()<<"accepted"<<accepted<<"rejected"<<reverted;
 }
 
 bool WangLandauMPI::checkFlat()
@@ -273,7 +281,6 @@ void WangLandauMPI::makeNormalInitState()
         i++;
     }
     qDebug()<<"normalize init state takes "<<i<<" steps";
-    this->updateGH(eTemp);
 }
 
 void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
@@ -320,7 +327,6 @@ void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
 
     qDebug()<<"normalize init state takes "<<i<<" steps, E="<<eTemp<<
               " ("<<g.val(gaps.from(gapNumber))<<";"<<g.val(gaps.to(gapNumber)+1)<<")";
-    this->updateGH(eTemp);
 }
 
 void WangLandauMPI::makeNormalInitStateBothSides()
