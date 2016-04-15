@@ -181,12 +181,14 @@ void WangLandauMPI::init()
     gapNumber = floor(rank/walkersByGap);
 
     //Определяем соседние узлы следующего (соседнего) окна. Для последнего окна соседей не будет (принимает от предыдущих)
+    neightbourWalkers.clear();
     if (gapNumber!=gaps.Gaps()-1) {
         for (unsigned int i=0;i<walkersByGap;i++)
             neightbourWalkers.push_back((gapNumber+1)*walkersByGap+i);
     }
 
     //определяем узлы своего окна
+    sameWalkers.clear();
     for (unsigned int i=0;i<walkersByGap;i++)
         sameWalkers.push_back(gapNumber*walkersByGap+i);
 

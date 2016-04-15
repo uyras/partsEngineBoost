@@ -38,7 +38,7 @@ void GapManager::setLogarithmic(unsigned gaps, unsigned intervals, double alfa, 
     this->intervals=intervals;
     froms.resize(gaps);
     tos.resize(gaps);
-    double a=2., k=a-1.;
+    double a=alfa, k=beta;
 
     froms[gaps-1]=(1.-k/a)*intervals;
     tos[gaps-1]=intervals;
@@ -51,6 +51,27 @@ void GapManager::setLogarithmic(unsigned gaps, unsigned intervals, double alfa, 
     }
 
     froms[0]=0; //первый гап обязательно первый интервал
+}
+
+void GapManager::setLinear(unsigned gaps, unsigned intervals, double overlap)
+{
+    this->gaps = gaps;
+    this->intervals=intervals;
+
+    froms.resize(gaps);
+    tos.resize(gaps);
+
+    double m=(double)gaps;
+
+    double mingap=(double)intervals/m;
+
+    for (unsigned i=0; i<gaps; i++){
+        double j=i*intervals;
+        froms[i]=j/(m*(1.+overlap));
+        tos[i]=j/m + mingap;
+    }
+    froms[0]=0;
+    tos[gaps-1]=intervals-1;
 }
 
 double GapManager::from(unsigned gap)
