@@ -21,12 +21,15 @@ using namespace boost::mpi;
 class WangLandauMPI
 {
 public:
-    WangLandauMPI(PartArray *system, unsigned int intervals, unsigned int gapCount=10, double overlap=0.75, double accuracy=0.75, double fmin=0.00001);
+    WangLandauMPI(PartArray *system, unsigned int intervals, double accuracy=0.75, double fmin=1.00001);
     ~WangLandauMPI();
 
     void run(unsigned stepCount=10000);
     void testDos(); //Функция для тестирования разных функций в динамике
     void walk(unsigned stepsPerWalk);
+
+    void checkParams();
+    void init();
 
     /**
      * @brief processWalk Выполняется только когда h стала плоской
@@ -104,13 +107,14 @@ private:
     unsigned int walkersByGap, //число блуждателей на интервал
         gapNumber, //номер интервала, в котором работает текущий блуждатель
         intervals; //число интервалов в плотности состояний
-    double overlap,//степень перекрытия энергетических окон
-        accuracy; //величина погрешности для степени плоскости гистограммы
+    double accuracy; //величина погрешности для степени плоскости гистограммы
 
     double average; //подсчитывает среднее число для h
     unsigned hCount; //количество ненулевых элементов h, нужно для подсчета среднего
+public:
     GapManager gaps; //энергетические интервалы
 
+private:
     vector<int>
         neightbourWalkers, //валкеры из соседнего окна, для которых возможен обмен
         sameWalkers; //валкеры из того же энергетического окна
@@ -123,6 +127,7 @@ private:
     int size; //число задействованных блуждателей
     int rank;
     int root;
+    bool inited;
 
     const int
         tag_swapEnergy, //отправка энергий

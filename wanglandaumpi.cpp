@@ -3,8 +3,6 @@
 WangLandauMPI::WangLandauMPI(
         PartArray *system,
         unsigned int intervals,
-        unsigned int gapCount,
-        double overlap,
         double accuracy,
         double fmin
         ):
@@ -15,14 +13,13 @@ WangLandauMPI::WangLandauMPI(
     fMin(fmin),
     f(0),
     intervals(intervals),
-    overlap(overlap),
     accuracy(accuracy),
     average(0.0),
     hCount(0),
-    gaps(gapCount,intervals,overlap),
     g(0,0,0),
     h(0,0,0),
     root(0),
+    inited(false),
 
     tag_swapEnergy(1),
     tag_swapEnergyPack(2),
@@ -39,39 +36,11 @@ WangLandauMPI::WangLandauMPI(
     size = world.size();
     rank = world.rank();
 
-    if (size%gapCount!=0) {
-        qFatal("Error! Process number is not divisible to gap number.");
-    }
-
-    if (system->count()==0){
-        qFatal("Error! The system is empty.");
-    }
-
-    walkersByGap = floor(size/gapCount);
-
-    if (walkersByGap<3){
-        qFatal("Too small number of processes, minimal is %d", gapCount*3);
-    }
-
-    gapNumber = floor(rank/walkersByGap);
-
-    //Определяем соседние узлы следующего (соседнего) окна. Для последнего окна соседей не будет (принимает от предыдущих)
-    if (gapNumber!=gapCount-1) {
-        for (unsigned int i=0;i<walkersByGap;i++)
-            neightbourWalkers.push_back((gapNumber+1)*walkersByGap+i);
-    }
-
-    //определяем узлы своего окна
-    for (unsigned int i=0;i<walkersByGap;i++)
-        sameWalkers.push_back(gapNumber*walkersByGap+i);
-
-    //считаем минимум и максимум системы
-    if (sys->Minstate().size()==0 || sys->Maxstate().size()==0)
-        qFatal("Min or max state is unknown. DOS calculation is impossible.");
-
     //инициируем DOS
     h.resize(sys->E(sys->Minstate()), sys->E(sys->Maxstate()), intervals);
     g.resize(sys->E(sys->Minstate()), sys->E(sys->Maxstate()), intervals);
+
+    f = std::exp(1);
 }
 
 WangLandauMPI::~WangLandauMPI()
@@ -81,11 +50,12 @@ WangLandauMPI::~WangLandauMPI()
 
 void WangLandauMPI::run(unsigned stepCount)
 {
+    this->checkParams();
+    this->init();
+    if (walkersByGap<2){
+        qFatal("Too small number of processes, minimal is %d", gaps.Gaps()*2);
+    }
 
-    if (!gaps.inRange(g.num(sys->E()),gapNumber))
-        qFatal("Init state is not in range");
-
-    this->f = std::exp(1);
     this->updateGH(sys->E());
 
     world.barrier();
@@ -182,6 +152,46 @@ void WangLandauMPI::walk(unsigned stepsPerWalk)
     }
 
     qDebug()<<"accepted"<<accepted<<"rejected"<<reverted;
+}
+
+void WangLandauMPI::checkParams()
+{
+    if (gaps.Gaps()==0 || gaps.Intervals() ==0)
+        qFatal("gaps is not inited. Please, one of WangLandauMPI::gaps::set***() function");
+
+    if (size%gaps.Gaps()!=0) {
+        qFatal("Error! Process number is not divisible to gap number.");
+    }
+
+    if (!gaps.inRange(g.num(sys->E()),gapNumber))
+        qFatal("Init state is not in range");
+
+    if (sys->count()==0){
+        qFatal("Error! The system is empty.");
+    }
+
+    if (sys->Minstate().size()==0 || sys->Maxstate().size()==0)
+        qFatal("Min or max state is unknown. DOS calculation is impossible.");
+
+}
+
+void WangLandauMPI::init()
+{
+    walkersByGap = floor(size/gaps.Gaps());
+    gapNumber = floor(rank/walkersByGap);
+
+    //Определяем соседние узлы следующего (соседнего) окна. Для последнего окна соседей не будет (принимает от предыдущих)
+    if (gapNumber!=gaps.Gaps()-1) {
+        for (unsigned int i=0;i<walkersByGap;i++)
+            neightbourWalkers.push_back((gapNumber+1)*walkersByGap+i);
+    }
+
+    //определяем узлы своего окна
+    for (unsigned int i=0;i<walkersByGap;i++)
+        sameWalkers.push_back(gapNumber*walkersByGap+i);
+
+    this->f = std::exp(1);
+    inited=true;
 }
 
 bool WangLandauMPI::checkFlat()
@@ -286,6 +296,8 @@ void WangLandauMPI::makeNormalInitState()
 
 void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
 {
+    this->init();
+
     unsigned long int i=0;
     int rotated = 0;
     double eTemp, eTempPrev;
@@ -407,9 +419,8 @@ bool WangLandauMPI::recieveSystem()
         } else {
             sys->state.fromString(newState);
             qDebug()<<
-                       QString("(recv) new state (%2) applied from %1")
-                       .arg(pair)
-                       .arg(sys->state.toString().c_str());
+                       QString("(recv) new state applied from %1")
+                       .arg(pair);
             this->updateGH();
             recieved = true;
         }
@@ -464,7 +475,7 @@ void WangLandauMPI::sendSystem(int pair)
                 randnum=10e-20;
             randnum = std::log(randnum);
             if (gaps.inRange(g.num(ey),gapNumber) && randnum <= p){ //если вероятность получилась, отправляем свой конфиг
-                qDebug()<<QString("(send) probability confirmed, send config %2 to %1").arg(pair).arg(sys->state.toString().c_str());
+                qDebug()<<QString("(send) probability confirmed, send config to %1").arg(pair);
                 world.send(pair,tag_swapConfig,sys->state.toString());
                 sys->state.fromString(newState);
                 this->updateGH();
@@ -564,11 +575,10 @@ void WangLandauMPI::save(string filename)
     } else {
         QString fname = QString::fromStdString(filename);
         if (fname=="")
-            fname=QString("g_%1_%2_%3_%4_%5.dat")
+            fname=QString("g_%1_%2_%3_%4.dat")
                     .arg(sys->count())
                     .arg(intervals)
                     .arg(gaps.Gaps())
-                    .arg(overlap)
                     .arg(accuracy);
         ofstream f(fname.toStdString().c_str());
 
@@ -667,7 +677,6 @@ string WangLandauMPI::dump()
     ss<<"walkersByGap="<<this->walkersByGap<<endl;
     ss<<"gapNumber="<<this->gapNumber<<endl;
     ss<<"intervals="<<this->intervals<<endl;
-    ss<<"overlap="<<this->overlap<<endl;
     ss<<"accuracy="<<this->accuracy<<endl;
 
     ss<<"finishedProcesses="<<this->finishedProcesses<<endl;
@@ -688,7 +697,7 @@ string WangLandauMPI::dump()
     ss<<endl;
 
     ss<<"system size="<<this->sys->count()<<endl;
-    ss<<"system state="<<this->sys->state.toString()<<endl;
+    //ss<<"system state="<<this->sys->state.toString()<<endl;
     return ss.str();
 }
 
