@@ -12,6 +12,7 @@
 #include "partarrayboost.h"
 #include "random.h"
 #include <boost/mpi.hpp>
+#include <boost/serialization/vector.hpp>
 #include "dos2.h"
 #include "gapmanager.h"
 
@@ -77,6 +78,17 @@ public:
      * @param filename Имя файла для сохранения. По умолчанию сохраняет в формате g_<number_of_parts>_<intervals>.dat.
      */
     void save(std::string filename="");
+
+    /**
+     * @brief balanceGaps Балансирует энергетические интервалы в GapManager классе с учетом сложности энергетического ландшафта
+     * @param mcSteps Число шагов за одну WL-итерацию
+     *
+     * Процесс балансировки проходит следующим образом:
+     * 1. Запускается mcSteps шагов метрополиса
+     * 2. Проверяются на плоскость гистограммы H кадого гапа
+     * 3. Если не достигли плоскости, идем в шаг 1. Иначе увеличиваем завершившийся гап на 1%.
+     */
+    void balanceGaps(unsigned mcSteps=10000);
 
 private:
     void averageHistogramms(); //усреднить гистограмму между блуждателями своего окна, блокирующая

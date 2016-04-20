@@ -155,16 +155,6 @@ void GapManager::setLinear(unsigned gaps, unsigned intervals, double overlap)
     tos[gaps-1]=intervals-1;
 }
 
-double GapManager::from(unsigned gap)
-{
-    return froms[gap];
-}
-
-double GapManager::to(unsigned gap)
-{
-    return tos[gap];
-}
-
 double GapManager::inRange(unsigned interval, unsigned gap)
 {
     return interval>=froms[gap] && interval<=tos[gap];

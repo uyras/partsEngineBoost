@@ -4,13 +4,27 @@
 #include <vector>
 #include <cmath>
 #include <sstream>
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/serialization/vector.hpp>
 
 using namespace std;
+using namespace boost::serialization;
 class GapManager
 {
 public:
     GapManager();
     GapManager(unsigned gaps, unsigned intervals, double overlap);
+
+    friend class boost::serialization::access;
+    template<class Archive>
+    void serialize(Archive & ar, const unsigned int version)
+    {
+        ar & gaps;
+        ar & intervals;
+        ar & froms;
+        ar & tos;
+    }
 
     void setUniform(unsigned gaps, unsigned intervals, double overlap);
 
@@ -28,8 +42,8 @@ public:
 
     void setLinear(unsigned gaps, unsigned intervals, double overlap=0.8);
 
-    double from(unsigned gap);
-    double to(unsigned gap);
+    inline unsigned& from(unsigned gap){ return froms[gap]; }
+    inline unsigned& to(unsigned gap){ return tos[gap]; }
     double inRange(unsigned interval, unsigned gap);
 
     inline unsigned Gaps(){ return gaps; }

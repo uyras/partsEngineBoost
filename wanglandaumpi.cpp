@@ -9,7 +9,7 @@ WangLandauMPI::WangLandauMPI(
     finishedProcesses(0),
     flatedProcesses(0),
     thisFlatted(false),
-    sys(new PartArray(*system)),
+    sys(system),
     fMin(fmin),
     f(0),
     intervals(intervals),
@@ -45,7 +45,7 @@ WangLandauMPI::WangLandauMPI(
 
 WangLandauMPI::~WangLandauMPI()
 {
-    delete sys;
+
 }
 
 void WangLandauMPI::run(unsigned stepCount)
@@ -192,6 +192,12 @@ void WangLandauMPI::init()
     for (unsigned int i=0;i<walkersByGap;i++)
         sameWalkers.push_back(gapNumber*walkersByGap+i);
 
+    //обнуляем G
+    for (unsigned i=0; i<g.Intervals(); i++){
+        g[i]=0;
+    }
+    this->resetH();
+
     this->f = std::exp(1);
     inited=true;
 }
@@ -208,6 +214,7 @@ bool WangLandauMPI::checkFlat()
         if (h.at(i)!=0. && fabs(h.at(i)-average)/average > (1.0 - accuracy)) //критерий плоскости
             return false;
     }
+
     return true;
 }
 
@@ -238,8 +245,6 @@ void WangLandauMPI::processWalk()
     bool beforeFinished = this->finished();
     resetH(); //обнуляем гистограмму
     f=sqrt(f);
-    average = 0;
-    hCount = 0;
     this->flatedProcesses = 0;
     this->thisFlatted = false;
     qDebug()<<"modify f="<<f<<" on "<<rank<<" walker";
@@ -632,6 +637,128 @@ void WangLandauMPI::save(string filename)
     world.barrier();
 }
 
+void WangLandauMPI::balanceGaps(unsigned mcSteps)
+{
+
+    StateMachineFree initState=sys->state;
+    const double minSize=(gaps.Intervals()/gaps.Gaps())*0.5;
+    const double flatCriterion=0.2;
+    bool finished=false;
+    double scalePercent=0.01;
+
+    while (!finished){
+        //очищаем систему
+        this->makeNormalInitStateBothSides();
+//        this->checkParams();
+        this->init();
+        //if (walkersByGap<2){
+        //    qFatal("Too small number of processes, minimal is %d", gaps.Gaps()*2);
+        //}
+        this->updateGH(sys->E());
+
+        //проходим МК-шаги
+        this->walk(mcSteps);
+
+        //собираем информацию о плоскости гистограмм
+        vector<double> flattiness;
+        double disp=0, m=0, m2=0;
+        unsigned iCount=0;
+        for (unsigned i=gaps.from(gapNumber); i<=gaps.to(gapNumber); i++){//считаем матожидание
+            if (h.at(i)!=0.){
+                m=((double)m*(double)iCount+(double)h.at(i))/(double)(iCount+1);
+                m2=((double)m2*(double)iCount+(double)(h.at(i)*h.at(i)))/(double)(iCount+1);
+                iCount++;
+            }
+        }
+        disp=m2-m*m;
+
+        gather(world,disp,flattiness,0);
+
+        if (rank==0) {
+            vector<double> flatAvg(gaps.Gaps(),0);
+            //усредняем значения блуждателей
+            for (unsigned i=0; i<gaps.Gaps(); i++){
+                for (unsigned j=0; j<walkersByGap; j++){
+                    flatAvg[i]=(flatAvg[i]*j+flattiness[i*gaps.Gaps()+j])/(double)(j+1);
+                }
+            }
+
+
+            //выбираем максимальное
+            unsigned flatNum=0; double maxFlat=0;
+            for (unsigned i=0; i<gaps.Gaps(); i++){
+                if (flatAvg[i]>maxFlat){
+                    flatNum=i;
+                    maxFlat=flattiness[i];
+                }
+            }
+
+            for (unsigned i=0;i<gaps.Gaps();i++){
+                if (
+                        gaps.from(i)>(gaps.Intervals()-1) ||
+                        gaps.from(i)<0 ||
+                        gaps.to(i)>(gaps.Intervals()-1) ||
+                        gaps.to(i)<0
+                        ){
+                    int j=0;
+                }
+            }
+
+            //если размер позволяет уменьшить гап, уменьшаем с сохранением уровня перекрытия
+            if (gaps.to(flatNum)-gaps.from(flatNum) > minSize){
+
+                if (flatNum!=(size-1)){ //если несбалансированный гап не последний, уменьшаем справа
+                    gaps.to(flatNum)-=(double)(gaps.to(flatNum)-gaps.from(flatNum))*scalePercent;
+                    gaps.from(flatNum+1)-=(double)(gaps.from(flatNum+1)-gaps.from(flatNum))*scalePercent;
+                }
+                if (flatNum!=0) { //если несбалансированный гап не первый, уменьшаем слева
+                    gaps.to(flatNum-1) +=
+                            ((double)(gaps.to(flatNum-1)-gaps.from(flatNum-1))*
+                            (double)(gaps.from(flatNum)-gaps.to(flatNum))*
+                            scalePercent) /
+                            (double)(gaps.from(flatNum-1)-gaps.to(flatNum));
+                    gaps.from(flatNum)+=(double)(gaps.to(flatNum)-gaps.from(flatNum))*scalePercent;
+                }
+            } else { //если уменьшаемый гап достиг минимального разера, завершаем баланс
+                finished=true;
+            }
+
+            for (unsigned i=0;i<gaps.Gaps();i++){
+                if (
+                        gaps.from(i)>(gaps.Intervals()-1) ||
+                        gaps.from(i)<0 ||
+                        gaps.to(i)>(gaps.Intervals()-1) ||
+                        gaps.to(i)<0
+                        ){
+                    int j=0;
+                }
+            }
+
+            //определяем, завершилась ли балансировка
+            double balanceAvg=0;
+            for (unsigned i=0; i<flatAvg.size(); i++){
+                balanceAvg=(balanceAvg*i+flatAvg[i])/(double)(i+1);
+            }
+            bool allBalanced=true;
+            for (unsigned i=0; i<flatAvg.size(); i++){
+                if ((flatAvg[i]/balanceAvg)>(1.+flatCriterion) || (flatAvg[i]/balanceAvg)<(1.-flatCriterion)){
+                    allBalanced=false;
+                    break;
+                }
+            }
+            if (allBalanced)
+                finished=true;
+        }
+
+        //отправляем всем флаг finished
+        broadcast(world,finished,0);
+
+        //отправляем всем новое распределение гапов
+        broadcast(world,gaps,0);
+    }
+    sys->state = initState;
+}
+
 void WangLandauMPI::checkStop()
 {
     if (boost::optional<status> s = this->world.iprobe(any_source,tag_stopsignal)){
@@ -656,6 +783,8 @@ void WangLandauMPI::resetH()
     for (unsigned i=0; i<h.Intervals(); i++){
         h.at(i)=0;
     }
+    average = 0;
+    hCount = 0;
 }
 
 string WangLandauMPI::dump()
