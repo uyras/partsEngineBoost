@@ -233,7 +233,7 @@ void WangLandauMPI::sygnaliseFlat()
 {
     for (unsigned i=0;i<sameWalkers.size();i++){
         if (sameWalkers[i]!=rank)
-            world.isend(sameWalkers[i],tag_flatSignal);
+            world.send(sameWalkers[i],tag_flatSignal);
     }
     this->flatedProcesses++;
     thisFlatted=true;
@@ -584,7 +584,7 @@ void WangLandauMPI::averageMaster()
     //отплавляем всем гистограммы
     for (unsigned int i=0;i<sameWalkers.size();i++){
         if (sameWalkers[i]!=this->rank){
-            world.isend(sameWalkers[i],tag_averagedHistogramm,this->g);
+            world.send(sameWalkers[i],tag_averagedHistogramm,this->g);
         }
     }
 }
@@ -619,7 +619,7 @@ void WangLandauMPI::sygnaliseFinish()
                 sendFlag=false;
         }
         if (sendFlag)
-            world.isend(i,tag_finish,0);
+            world.send(i,tag_finish,0);
     }
     this->finishedProcesses+=sameWalkers.size();
     qDebug()<<"Send about finish";
