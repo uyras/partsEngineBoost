@@ -495,6 +495,56 @@ void WangLandauMPI::sendSystem(int pair)
     }
 }
 
+void WangLandauMPI::save()
+{
+    QString fname = QString("g_%1_%2_%3_%4.dat_%5")
+            .arg(sys->count())
+            .arg(intervals)
+            .arg(gaps.Gaps())
+            .arg(accuracy)
+            .arg(rank);
+    ofstream f(fname.toStdString().c_str());
+
+    if (rank==0){
+        f<<"eMin="<<sys->EMin()<<endl;
+        f<<"eMax="<<sys->EMax()<<endl;
+        f<<"intervals="<<this->intervals<<endl;
+        f<<"gaps="<<this->gaps.Gaps()<<endl;
+        f<<"walkers="<<size<<endl;
+        f<<"walkersByGap="<<this->walkersByGap<<endl;
+        f<<"from=";
+        for (unsigned i=0;i<gaps.Gaps();i++){
+            f<<h.val(gaps.from(i))<<",";
+        }
+        f<<endl;
+        f<<"to=";
+        for (unsigned i=0;i<gaps.Gaps();i++){
+            f<<h.val(gaps.to(i))<<",";
+        }
+        f<<endl;
+        f<<"nfrom=";
+        for (unsigned i=0;i<gaps.Gaps();i++){
+            f<<gaps.from(i)<<",";
+        }
+        f<<endl;
+        f<<"nto=";
+        for (unsigned i=0;i<gaps.Gaps();i++){
+            f<<gaps.to(i)<<",";
+        }
+        f<<endl;
+    }
+
+    f<<"-----"<<endl;
+    f<<rank<<endl;
+    for (unsigned i=0;i<g.Intervals();i++){
+        f<<i<<"\t"<<g.val(i)<<"\t"<<g.at(i)<<endl;
+    }
+
+    f.close();
+
+    world.barrier();
+}
+
 void WangLandauMPI::averageHistogramms()
 {
     qDebug()<<"average histogramms";
@@ -575,7 +625,7 @@ void WangLandauMPI::sygnaliseFinish()
     qDebug()<<"Send about finish";
 }
 
-void WangLandauMPI::save(string filename)
+void WangLandauMPI::save2(string filename)
 {
     if (rank!=0){
         world.send(0,tag_saveGistogramm,this->g);
@@ -757,6 +807,11 @@ void WangLandauMPI::balanceGaps(unsigned mcSteps)
         broadcast(world,gaps,0);
     }
     sys->state = initState;
+}
+
+void WangLandauMPI::balanceGaps2(unsigned mcSteps)
+{
+
 }
 
 void WangLandauMPI::checkStop()
