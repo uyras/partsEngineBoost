@@ -292,6 +292,7 @@ void WangLandauMPI::updateGH(double E)
 
 void WangLandauMPI::makeNormalInitState()
 {
+    this->init();
     unsigned long int i=0;
     double eTemp=0;
     while (!gaps.inRange(g.num(eTemp=sys->E()),gapNumber)){
@@ -351,10 +352,10 @@ void WangLandauMPI::makeNormalInitStateFromGS(bool revert)
 
 void WangLandauMPI::makeNormalInitStateBothSides()
 {
+    this->init();
     if (gapNumber<=floor(gaps.Gaps()/2)){
         qDebug("calc from GS");
         sys->setState(sys->Minstate());
-
         this->makeNormalInitStateFromGS(false);
     } else {
         qDebug("calc from maximal");

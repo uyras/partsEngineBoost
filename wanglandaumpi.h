@@ -104,6 +104,10 @@ public:
      */
     void balanceGaps2(unsigned mcSteps=100000);
 
+
+    int size; ///число задействованных блуждателей
+    int rank; ///число блуждателей всего
+
 private:
     void averageHistogramms(); //усреднить гистограмму между блуждателями своего окна, блокирующая
     void averageMaster(); //хост усреднения
@@ -150,8 +154,6 @@ private:
 
     environment env;
     communicator world;
-    int size; //число задействованных блуждателей
-    int rank;
     int root;
     bool inited;
 
