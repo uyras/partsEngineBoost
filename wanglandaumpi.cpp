@@ -507,22 +507,10 @@ void WangLandauMPI::save()
     ofstream f(fname.toStdString().c_str());
 
     if (rank==0){
-        f<<"eMin="<<sys->EMin()<<endl;
-        f<<"eMax="<<sys->EMax()<<endl;
         f<<"intervals="<<this->intervals<<endl;
         f<<"gaps="<<this->gaps.Gaps()<<endl;
         f<<"walkers="<<size<<endl;
         f<<"walkersByGap="<<this->walkersByGap<<endl;
-        f<<"from=";
-        for (unsigned i=0;i<gaps.Gaps();i++){
-            f<<h.val(gaps.from(i))<<",";
-        }
-        f<<endl;
-        f<<"to=";
-        for (unsigned i=0;i<gaps.Gaps();i++){
-            f<<h.val(gaps.to(i))<<",";
-        }
-        f<<endl;
         f<<"nfrom=";
         for (unsigned i=0;i<gaps.Gaps();i++){
             f<<gaps.from(i)<<",";
@@ -533,12 +521,17 @@ void WangLandauMPI::save()
             f<<gaps.to(i)<<",";
         }
         f<<endl;
+        f<<"energies:"<<endl;
+        for (unsigned i=0;i<g.Intervals();i++){
+            f<<i<<"\t"<<g.val(i)<<"\t"<<g.val(i+1)<<endl;
+        }
     }
 
     f<<"-----"<<endl;
     f<<rank<<endl;
     for (unsigned i=0;i<g.Intervals();i++){
-        f<<i<<"\t"<<g.val(i)<<"\t"<<g.at(i)<<endl;
+        if (g.at(i)>0)
+            f<<i<<"\t"<<g.val(i)<<"\t"<<g.at(i)<<endl;
     }
 
     f.close();
