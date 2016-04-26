@@ -19,18 +19,7 @@ WangLandauMPI::WangLandauMPI(
     g(0,0,0),
     h(0,0,0),
     root(0),
-    inited(false),
-
-    tag_swapEnergy(1),
-    tag_swapEnergyPack(2),
-    tag_swapConfig(3),
-    tag_finish(5),
-    tag_averageHistogramm(7),
-    tag_averagedHistogramm(8),
-    tag_complete_swap(9),
-    tag_stopsignal(10),
-    tag_flatSignal(11),
-    tag_saveGistogramm(12)
+    inited(false)
 {
     qDebug()<<"(init) start init";
     size = world.size();
@@ -78,11 +67,24 @@ void WangLandauMPI::run(unsigned stepCount)
         //проверяем нет ли заявок на обмен конфигами
         //если есть заявка, принимаем ее, отправляем и принимаем конфиг
         //qDebug()<<"recieve system";
-        this->recieveSystem();
-        //если нет заявок на обмен, отправляем заявку и ждем обмена
-        //qDebug()<<"send system";
-        this->sendSystem();
-        //qDebug()<<"swap complete";
+        //начинаем процедуру обмена конфигурациями
+        world.barrier();
+        int pair=0;
+        for (int i=0; i<world.size(); i++){
+            if (world.rank()==i){
+                pair=neightbourWalkers[Random::Instance()->next(neightbourWalkers.size())];
+            }
+            broadcast(world,pair,i);
+            if (world.rank()==i){
+                this->sendSystem(pair);
+            }
+            if (world.rank()==pair){
+                this->recieveSystem(i);
+            }
+        }
+        world.barrier();
+        qDebug()<<"swap complete";
+
         checkStop();
 
 
@@ -99,12 +101,13 @@ void WangLandauMPI::run(unsigned stepCount)
         //если ВСЕ блуждатели завершили работу, сохраняем результат и выходим
         if (this->allFinished()){
             if (rank==0) qInfo("WL completed");
-
-            //qDebug()<<"Sleeping 1 seconds before quit";
-            sleep(1);
-            this->recieveSystem(); //получаем все сообщения перед выходом
-
+            world.barrier();
             return;
+        }
+
+
+        if (!finishSignalSended && this->finished()){
+            this->sygnaliseFinish();
         }
 
     }
@@ -182,15 +185,19 @@ void WangLandauMPI::init()
 
     //Определяем соседние узлы следующего (соседнего) окна. Для последнего окна соседей не будет (принимает от предыдущих)
     neightbourWalkers.clear();
+    if (gapNumber!=0) {
+        for (unsigned int i=0;i<walkersByGap;i++)
+            neightbourWalkers.push_back((gapNumber-1)*walkersByGap+i);
+    }
+
     if (gapNumber!=gaps.Gaps()-1) {
         for (unsigned int i=0;i<walkersByGap;i++)
             neightbourWalkers.push_back((gapNumber+1)*walkersByGap+i);
     }
 
+
     //определяем узлы своего окна
-    sameWalkers.clear();
-    for (unsigned int i=0;i<walkersByGap;i++)
-        sameWalkers.push_back(gapNumber*walkersByGap+i);
+    sameWalkers = world.split(gapNumber);
 
     //обнуляем G
     for (unsigned i=0; i<g.Intervals(); i++){
@@ -200,6 +207,7 @@ void WangLandauMPI::init()
 
     this->f = std::exp(1);
     inited=true;
+    finishSignalSended=false;
 }
 
 bool WangLandauMPI::checkFlat()
@@ -220,8 +228,9 @@ bool WangLandauMPI::checkFlat()
 
 bool WangLandauMPI::allFlatted()
 {
-    while (boost::optional<status> s = this->world.iprobe(any_source,tag_flatSignal)){
-        this->world.recv((*s).source(),tag_flatSignal); //получаем запрос, чтобы не валялся в буфере
+    while (boost::optional<status> s = this->sameWalkers.iprobe(any_source,tag_flatSignal)){
+        char buff=false;
+        this->sameWalkers.recv((*s).source(),tag_flatSignal,buff); //получаем запрос, чтобы не валялся в буфере
         flatedProcesses++;
     }
 
@@ -231,9 +240,9 @@ bool WangLandauMPI::allFlatted()
 
 void WangLandauMPI::sygnaliseFlat()
 {
-    for (unsigned i=0;i<sameWalkers.size();i++){
-        if (sameWalkers[i]!=rank)
-            world.send(sameWalkers[i],tag_flatSignal);
+    for (int i=0;i<sameWalkers.size();i++){
+        if (i!=sameWalkers.rank())
+            sameWalkers.isend(i,tag_flatSignal,true);
     }
     this->flatedProcesses++;
     thisFlatted=true;
@@ -242,15 +251,11 @@ void WangLandauMPI::sygnaliseFlat()
 
 void WangLandauMPI::processWalk()
 {
-    bool beforeFinished = this->finished();
     resetH(); //обнуляем гистограмму
     f=sqrt(f);
     this->flatedProcesses = 0;
     this->thisFlatted = false;
     qDebug()<<"modify f="<<f<<" on "<<rank<<" walker";
-    qDebug()<<"process walk parameters, modify f as "<<f;
-    if (!beforeFinished && this->finished()) //если процесс финишировал в процессе изменения параметра f, сигнализируем об этом всем
-        this->sygnaliseFinish();
 }
 
 bool WangLandauMPI::finished()
@@ -379,77 +384,65 @@ double WangLandauMPI::calcAverageH()
     return avg;
 }
 
-bool WangLandauMPI::recieveSystem()
+bool WangLandauMPI::recieveSystem(int pair)
 {
-    bool recieved=false;
-    while (boost::optional<status> s = this->world.iprobe(any_source,tag_swapEnergy)){ //получаем все входящие сообщения
-        //qDebug()<<"Recieve system: signal found from"<<(*s).source();
-        int pair = (*s).source();
-        double ex,ey;
-        double gjex,gjey;
+    double ex,ey;
+    double gjex,gjey;
 
-        qDebug()<<QString("(recv) recieve pair energy from %1").arg(pair);
-        world.recv(pair,tag_swapEnergy,ex);
-        qDebug("(recv) recieved from %d E=%f",pair,ex);
+    qDebug()<<QString("(recv) recieve pair energy from %1").arg(pair);
+    world.recv(pair,tag_swapEnergy,ex);
+    qDebug("(recv) recieved from %d E=%f",pair,ex);
 
-        string newState = this->sys->state.toString();
-        bool rejected = !this->gaps.inRange(g.num(ex),gapNumber);
-        ey = this->sys->E();
-        gjex = this->g[ex];
-        gjey = this->g[ey];
-        packed_oarchive pack(world);
-        pack<<rejected;
-        pack<<ey;
-        pack<<gjex;
-        pack<<gjey;
-        pack<<newState;
+    string newState = this->sys->state.toString();
+    bool rejected = !this->gaps.inRange(g.num(ex),gapNumber);
+    ey = this->sys->E();
+    gjex = this->g[ex];
+    gjey = this->g[ey];
+
+    packed_oarchive pack(world);
+    pack<<rejected;
+    pack<<ey;
+    pack<<gjex;
+    pack<<gjey;
+    pack<<newState;
 
 
-        world.send(pair,tag_swapEnergyPack,pack);
-        if (rejected){
-            qDebug()<<QString("(recv) send that energy not in range %1").arg(pair);
-            return recieved;
-        } else {
-            qDebug()<<QString("(recv) send energypack to %1").arg(pair);
-        }
-
-        qDebug()<<QString("(recv) waiting for new state from %1").arg(pair);
-
-        //ждем ответ, параллельно проверяем завершились ли остальные процессы
-        boost::mpi::request r = world.irecv(pair,tag_swapConfig,newState);
-        while (!r.test()){
-            if (this->allFinished(false))
-                return false;
-        }
-
-        if (newState.compare("false")==0){
-            qDebug()<<QString("(recv) new state rejected by %1").arg(pair);
-        } else {
-            sys->state.fromString(newState);
-            qDebug()<<
-                       QString("(recv) new state applied from %1")
-                       .arg(pair);
-            this->updateGH();
-            recieved = true;
-        }
+    world.send(pair,tag_swapEnergyPack,pack);
+    if (rejected){
+        qDebug()<<QString("(recv) send that energy not in range %1").arg(pair);
+        return false;
+    } else {
+        qDebug()<<QString("(recv) send energypack to %1").arg(pair);
     }
-    return recieved;
+
+    qDebug()<<QString("(recv) waiting for new state from %1").arg(pair);
+
+    //ждем ответ
+    world.recv(pair,tag_swapConfig,newState);
+
+    if (newState.compare("false")==0){
+        qDebug()<<QString("(recv) new state rejected by %1").arg(pair);
+        return false;
+    } else {
+        sys->state.fromString(newState);
+        qDebug()<<
+                   QString("(recv) new state applied from %1")
+                   .arg(pair);
+        this->updateGH();
+        return true;
+    }
 }
 
 void WangLandauMPI::sendSystem(int pair)
 {
     if (neightbourWalkers.size()>0) {
-        if (pair==(-1))
-            pair = neightbourWalkers[Random::Instance()->next(neightbourWalkers.size())];
 
         double ex,ey;
         double giex,giey,gjex,gjey;
 
-        {
-            ex = this->sys->E();
-            giex = this->g[ex];
-            qDebug("(send) offer to exchange with %d, E=%f", pair, ex);
-        }
+        ex = this->sys->E();
+        giex = this->g[ex];
+        qDebug("(send) offer to exchange with %d, E=%f", pair, ex);
 
         //отправлем свою энергию и ждем пока блуждатель ответит
         world.send(pair,tag_swapEnergy,ex);
@@ -457,12 +450,7 @@ void WangLandauMPI::sendSystem(int pair)
         //получаем ответ
         qDebug()<<QString("(send) waiting for energypack from %1").arg(pair);
         packed_iarchive pack(world);
-        //ждем ответ, параллельно проверяем завершились ли остальные процессы
-        boost::mpi::request r = world.irecv(pair,tag_swapEnergyPack,pack);
-        while (!r.test()){
-            if (this->allFinished(false))
-                return;
-        }
+        world.recv(pair,tag_swapEnergyPack,pack);
 
         bool rejected; string newState;
         pack>>rejected;
@@ -480,7 +468,7 @@ void WangLandauMPI::sendSystem(int pair)
             double p = (giex+gjey) - (giey+gjex);
             double randnum = Random::Instance()->nextDouble();
             if (0.0==randnum) //логарифма нуля не существует
-                randnum=10e-20;
+                randnum=10e-15;
             randnum = std::log(randnum);
             if (gaps.inRange(g.num(ey),gapNumber) && randnum <= p){ //если вероятность получилась, отправляем свой конфиг
                 qDebug()<<QString("(send) probability confirmed, send config to %1").arg(pair);
@@ -543,10 +531,10 @@ void WangLandauMPI::averageHistogramms()
 {
     qDebug()<<"average histogramms";
     //Если узел первый в окне, стать хостом
-    if (rank==this->sameWalkers[0]){
+    if (this->sameWalkers.rank()==0){
         this->averageMaster();
     } else {
-        this->averageSlave(this->sameWalkers[0]);
+        this->averageSlave();
     }
 }
 
@@ -558,9 +546,9 @@ void WangLandauMPI::averageMaster()
     allG.push_back(this->g); //добавляем свою гистограмму
 
     //получаем все остальные гистограммы
-    for (unsigned int i=0;i<sameWalkers.size()-1;i++){
+    for (int i=1;i<sameWalkers.size();i++){
         Dos2<double> tempG(0,0,0);
-        this->world.recv(any_source,tag_averageHistogramm,tempG);
+        this->sameWalkers.recv(any_source,tag_averageHistogramm,tempG);
         allG.push_back(tempG);
     }
 
@@ -576,18 +564,16 @@ void WangLandauMPI::averageMaster()
     }
 
     //отплавляем всем гистограммы
-    for (unsigned int i=0;i<sameWalkers.size();i++){
-        if (sameWalkers[i]!=this->rank){
-            world.send(sameWalkers[i],tag_averagedHistogramm,this->g);
-        }
+    for (int i=1;i<sameWalkers.size();i++){
+        sameWalkers.send(i,tag_averagedHistogramm,this->g);
     }
 }
 
-void WangLandauMPI::averageSlave(int host)
+void WangLandauMPI::averageSlave()
 {
     qDebug()<<"average as slave";
-    world.send(host,tag_averageHistogramm,this->g);
-    world.recv(host,tag_averagedHistogramm,this->g);
+    sameWalkers.send(0,tag_averageHistogramm,this->g);
+    sameWalkers.recv(0,tag_averagedHistogramm,this->g);
 }
 
 bool WangLandauMPI::allFinished(bool showMessage)
@@ -605,18 +591,13 @@ bool WangLandauMPI::allFinished(bool showMessage)
 
 void WangLandauMPI::sygnaliseFinish()
 {
+    qDebug()<<"Send about finish";
     for (int i=0;i<size;i++){
-        //не отправлять своей группе сигнал о завершении
-        bool sendFlag = true;
-        for (unsigned j=0;j<this->sameWalkers.size();j++){
-            if (i==sameWalkers[j])
-                sendFlag=false;
-        }
-        if (sendFlag)
+        if (i!=rank)
             world.send(i,tag_finish,0);
     }
-    this->finishedProcesses+=sameWalkers.size();
-    qDebug()<<"Send about finish";
+    this->finishedProcesses++;
+    this->finishSignalSended=true;
 }
 
 void WangLandauMPI::save2(string filename)
@@ -810,8 +791,9 @@ void WangLandauMPI::balanceGaps2(unsigned mcSteps)
 
 void WangLandauMPI::checkStop()
 {
+    bool buff=false;
     if (boost::optional<status> s = this->world.iprobe(any_source,tag_stopsignal)){
-        this->world.recv((*s).source(),tag_stopsignal); //получаем запрос, чтобы не валялся в буфере
+        this->world.recv((*s).source(),tag_stopsignal,buff); //получаем запрос, чтобы не валялся в буфере
         qDebug()<<"Process stopped by"<<(*s).source();
         std::exit(0);
     }
@@ -821,7 +803,7 @@ void WangLandauMPI::callStop()
 {
     for (int i=0;i<size;i++){
         if (i!=rank)
-            world.isend(i,tag_stopsignal);
+            world.isend(i,tag_stopsignal,true);
     }
     qDebug()<<"Send stop signal to all";
     std::exit(0);
@@ -868,11 +850,6 @@ string WangLandauMPI::dump()
     ss<<"neightbourWalkers=";
     for (unsigned int i=0;i<neightbourWalkers.size();i++){
         ss<<neightbourWalkers[i]<<",";
-    }
-    ss<<endl;
-    ss<<"sameWalkers=";
-    for (unsigned int i=0;i<sameWalkers.size();i++){
-        ss<<sameWalkers[i]<<",";
     }
     ss<<endl;
 

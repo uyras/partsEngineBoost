@@ -70,8 +70,8 @@ public:
 
     double calcAverageH();
 
-    bool recieveSystem(); //Получить систему из любого узла, неблокирующая операция
-    void sendSystem(int pair=-1); //Отправить систему случайному блуждателю своего окна
+    bool recieveSystem(int pair); //Получить систему из узла pair
+    void sendSystem(int pair); //Отправить систему узлу pair
 
     void save();
 
@@ -111,11 +111,12 @@ public:
 private:
     void averageHistogramms(); //усреднить гистограмму между блуждателями своего окна, блокирующая
     void averageMaster(); //хост усреднения
-    void averageSlave(int host); // ведомые процессы усреднения
+    void averageSlave(); // ведомые процессы усреднения
 
     bool allFinished(bool showMessage=true); //Возвращает true если все процессы завершили работу.
     void sygnaliseFinish(); //сообщить всем узлам об окончании
     unsigned int finishedProcesses; //число финишировавших
+    bool finishSignalSended; //флаг, отправлен ли сигнал финиша
 
 
     bool checkFlat();//критерий плоскости гистограммы
@@ -145,9 +146,8 @@ public:
     GapManager gaps; //энергетические интервалы
 
 private:
-    vector<int>
-        neightbourWalkers, //валкеры из соседнего окна, для которых возможен обмен
-        sameWalkers; //валкеры из того же энергетического окна
+    vector<int> neightbourWalkers; //валкеры из соседнего окна, для которых возможен обмен
+    communicator sameWalkers; //валкеры из того же энергетического окна
 
     Dos2<double> g;//g - логарифм плотности состояний (энтропия), h - вспомогательная гистограмма, которая должна быть плоской
     Dos2<unsigned> h;
@@ -157,7 +157,7 @@ private:
     int root;
     bool inited;
 
-    const int
+    enum {
         tag_swapEnergy, //отправка энергий
         tag_swapEnergyPack, //отправка энергии, и двух точек гистограммы
         tag_swapConfig, //отправка конфигурации системы
@@ -167,7 +167,8 @@ private:
         tag_complete_swap,     //отправляется из хоста всем узлам, когда процесс обмена завершился
         tag_stopsignal,
         tag_flatSignal, //сигнал о том, что узел плоский
-        tag_saveGistogramm; //cигнал сохранения гистограммы
+        tag_saveGistogramm //cигнал сохранения гистограммы
+    };
 };
 
 #endif // WANGLANDAUMPI_H
