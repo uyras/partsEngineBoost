@@ -107,6 +107,7 @@ public:
 
     int size; ///число задействованных блуждателей
     int rank; ///число блуждателей всего
+    bool showMessages;///показывать дебаг сообщения
 
 private:
     void averageHistogramms(); //усреднить гистограмму между блуждателями своего окна, блокирующая
@@ -125,12 +126,10 @@ private:
     unsigned int flatedProcesses;
     bool thisFlatted;
 
-    void checkStop();
-    void callStop();
-
     inline void resetH();
 
     std::string dump();
+    inline void msg(std::string str){if (showMessages && rank==0) cout<<str<<endl; }
 
     PartArray *sys; //экземпляр вычисляемой системы
     double fMin, f;
@@ -165,7 +164,6 @@ private:
         tag_averageHistogramm,//
         tag_averagedHistogramm, //
         tag_complete_swap,     //отправляется из хоста всем узлам, когда процесс обмена завершился
-        tag_stopsignal,
         tag_flatSignal, //сигнал о том, что узел плоский
         tag_saveGistogramm //cигнал сохранения гистограммы
     };

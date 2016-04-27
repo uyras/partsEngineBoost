@@ -6,6 +6,7 @@ WangLandauMPI::WangLandauMPI(
         double accuracy,
         double fmin
         ):
+    showMessages(false),
     finishedProcesses(0),
     flatedProcesses(0),
     thisFlatted(false),
@@ -54,20 +55,22 @@ void WangLandauMPI::run(unsigned stepCount)
     //выполняем несколько шагов WL на каждом walker'е. Каждый walker имеет свой критерий плоскости
     while (continueFlag){
 
-        checkStop();
+        msg("walk");
 
         //qDebug()<<rank<<"start step";
         this->walk(stepCount);
 
-        if (this->checkFlat() && !this->thisFlatted) //проверяем на плоскость
+        msg("checkFlat");
+        if (this->checkFlat() && !this->thisFlatted){ //проверяем на плоскость
             this->sygnaliseFlat();
-
-        checkStop();
+            msg("sayFlat");
+        }
 
         //проверяем нет ли заявок на обмен конфигами
         //если есть заявка, принимаем ее, отправляем и принимаем конфиг
         //qDebug()<<"recieve system";
         //начинаем процедуру обмена конфигурациями
+        msg("barrier before sendrecv");
         world.barrier();
         int pair=0;
         for (int i=0; i<world.size(); i++){
@@ -85,19 +88,19 @@ void WangLandauMPI::run(unsigned stepCount)
         world.barrier();
         qDebug()<<"swap complete";
 
-        checkStop();
-
-
+        msg("sheckAllFlatted");
         if (this->allFlatted()){ //если все гистограммы в окне плоские,
+            msg("average G");
             this->averageHistogramms(); //усредняем ее
             this->processWalk(); //обнуляем H, усредняем f
         }
-        checkStop();
 
+        msg("save dump");
         ofstream f(QString("dump_%1.txt").arg(rank).toStdString().c_str());
         f<<this->dump();
         f.close();
 
+        msg("checkAllFinished");
         //если ВСЕ блуждатели завершили работу, сохраняем результат и выходим
         if (this->allFinished()){
             if (rank==0) qInfo("WL completed");
@@ -106,7 +109,9 @@ void WangLandauMPI::run(unsigned stepCount)
         }
 
 
+        msg("check am i finished");
         if (!finishSignalSended && this->finished()){
+            msg("say about finish");
             this->sygnaliseFinish();
         }
 
@@ -594,7 +599,7 @@ void WangLandauMPI::sygnaliseFinish()
     qDebug()<<"Send about finish";
     for (int i=0;i<size;i++){
         if (i!=rank)
-            world.send(i,tag_finish,0);
+            world.isend(i,tag_finish,0);
     }
     this->finishedProcesses++;
     this->finishSignalSended=true;
@@ -787,26 +792,6 @@ void WangLandauMPI::balanceGaps(unsigned mcSteps)
 void WangLandauMPI::balanceGaps2(unsigned mcSteps)
 {
 
-}
-
-void WangLandauMPI::checkStop()
-{
-    bool buff=false;
-    if (boost::optional<status> s = this->world.iprobe(any_source,tag_stopsignal)){
-        this->world.recv((*s).source(),tag_stopsignal,buff); //получаем запрос, чтобы не валялся в буфере
-        qDebug()<<"Process stopped by"<<(*s).source();
-        std::exit(0);
-    }
-}
-
-void WangLandauMPI::callStop()
-{
-    for (int i=0;i<size;i++){
-        if (i!=rank)
-            world.isend(i,tag_stopsignal,true);
-    }
-    qDebug()<<"Send stop signal to all";
-    std::exit(0);
 }
 
 void WangLandauMPI::resetH()

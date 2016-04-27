@@ -41,7 +41,9 @@ PRE_TARGETDEPS += $$PWD/../partsEngine/libPartsEngine.a
 TEMPLATE = lib
 CONFIG += staticlib
 DESTDIR = $$PWD
+
 CONFIG(release,debug|release){
     DEFINES += QT_NO_DEBUG_OUTPUT
 }
+
 CONFIG += c++11
