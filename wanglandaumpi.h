@@ -129,7 +129,7 @@ private:
     inline void resetH();
 
     std::string dump();
-    inline void msg(std::string str){if (showMessages && rank==0) cout<<str<<endl; }
+    inline void msg(std::string str){if (showMessages) cout<<str<<endl; }
 
     PartArray *sys; //экземпляр вычисляемой системы
     double fMin, f;
