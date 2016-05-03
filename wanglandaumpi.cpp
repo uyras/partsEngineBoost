@@ -276,13 +276,14 @@ void WangLandauMPI::updateGH(double E)
 
     if (!gaps.inRange(g.num(E),gapNumber)){
         qFatal(
-                    "Error! Trying to add e=%f out of range (%f(%d), %f(%d)). Real e=%f.",
+                    "Error! Trying to add e=%f out of range (%f(%d), %f(%d)). Real e=%f. state: %s",
                     E,
                     g.val(gaps.from(gapNumber)),
                     (int)gaps.from(gapNumber),
                     g.val(gaps.to(gapNumber)),
                     (int)gaps.to(gapNumber),
-                    sys->E());
+                    sys->E(),
+                    sys->state.toString().c_str());
     }
 
     g[E]+=log(f);
@@ -433,7 +434,9 @@ bool WangLandauMPI::recieveSystem(int pair)
         qDebug()<<
                    QString("(recv) new state applied from %1")
                    .arg(pair);
-        this->updateGH();
+        if (this->gaps.inRange(g.num(sys->E()),gapNumber)){
+            this->updateGH();
+        }
         return true;
     }
 }
