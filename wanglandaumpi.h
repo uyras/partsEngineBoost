@@ -92,7 +92,7 @@ public:
      */
     void balanceGaps(unsigned mcSteps=10000);
 
-    /**
+    /*/**
      * @brief balanceGaps2 Второй алгоритм балансировки
      * @param mcSteps
      *
@@ -102,7 +102,7 @@ public:
      * 3. Если критерий плоскости нарушен, значит в предыдущей точке гистограмма завершается.
      * 4. Следующая начинается с точки с учетом перекрытия
      */
-    void balanceGaps2(unsigned mcSteps=100000);
+    //void balanceGaps2(unsigned mcSteps=100000);
 
 
     int size; ///число задействованных блуждателей

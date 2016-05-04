@@ -20,6 +20,7 @@ public:
     template<class Archive>
     void serialize(Archive & ar, const unsigned int version)
     {
+        (void) version;
         ar & gaps;
         ar & intervals;
         ar & froms;

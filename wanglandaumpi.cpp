@@ -66,14 +66,12 @@ void WangLandauMPI::run(unsigned stepCount)
             msg("sayFlat");
         }
 
-        //проверяем нет ли заявок на обмен конфигами
-        //если есть заявка, принимаем ее, отправляем и принимаем конфиг
-        //qDebug()<<"recieve system";
+
         //начинаем процедуру обмена конфигурациями
         msg("barrier before sendrecv");
         world.barrier();
         int pair=0;
-        for (int i=0; i<world.size(); i++){
+        for (int i=world.size()-1; i>=0; --i){
             if (world.rank()==i){
                 pair=neightbourWalkers[Random::Instance()->next(neightbourWalkers.size())];
             }
@@ -726,21 +724,10 @@ void WangLandauMPI::balanceGaps(unsigned mcSteps)
                 }
             }
 
-            for (unsigned i=0;i<gaps.Gaps();i++){
-                if (
-                        gaps.from(i)>(gaps.Intervals()-1) ||
-                        gaps.from(i)<0 ||
-                        gaps.to(i)>(gaps.Intervals()-1) ||
-                        gaps.to(i)<0
-                        ){
-                    int j=0;
-                }
-            }
-
             //если размер позволяет уменьшить гап, уменьшаем с сохранением уровня перекрытия
             if (gaps.to(flatNum)-gaps.from(flatNum) > minSize){
 
-                if (flatNum!=(size-1)){ //если несбалансированный гап не последний, уменьшаем справа
+                if ((int)flatNum!=(size-1)){ //если несбалансированный гап не последний, уменьшаем справа
                     gaps.to(flatNum)-=(double)(gaps.to(flatNum)-gaps.from(flatNum))*scalePercent;
                     gaps.from(flatNum+1)-=(double)(gaps.from(flatNum+1)-gaps.from(flatNum))*scalePercent;
                 }
@@ -754,17 +741,6 @@ void WangLandauMPI::balanceGaps(unsigned mcSteps)
                 }
             } else { //если уменьшаемый гап достиг минимального разера, завершаем баланс
                 finished=true;
-            }
-
-            for (unsigned i=0;i<gaps.Gaps();i++){
-                if (
-                        gaps.from(i)>(gaps.Intervals()-1) ||
-                        gaps.from(i)<0 ||
-                        gaps.to(i)>(gaps.Intervals()-1) ||
-                        gaps.to(i)<0
-                        ){
-                    int j=0;
-                }
             }
 
             //определяем, завершилась ли балансировка
@@ -790,11 +766,6 @@ void WangLandauMPI::balanceGaps(unsigned mcSteps)
         broadcast(world,gaps,0);
     }
     sys->state = initState;
-}
-
-void WangLandauMPI::balanceGaps2(unsigned mcSteps)
-{
-
 }
 
 void WangLandauMPI::resetH()
