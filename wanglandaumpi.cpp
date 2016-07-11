@@ -27,8 +27,8 @@ WangLandauMPI::WangLandauMPI(
     rank = world.rank();
 
     //инициируем DOS
-    h.resize(sys->E(sys->Minstate()), sys->E(sys->Maxstate()), intervals);
-    g.resize(sys->E(sys->Minstate()), sys->E(sys->Maxstate()), intervals);
+    h.resize(sys->EMin(), sys->EMax(), intervals);
+    g.resize(sys->EMin(), sys->EMax(), intervals);
 
     f = std::exp(1);
 }
@@ -73,7 +73,7 @@ void WangLandauMPI::run(unsigned stepCount)
         int pair=0;
         for (int i=world.size()-1; i>=0; --i){
             if (world.rank()==i){
-                pair=neightbourWalkers[Random::Instance()->next(neightbourWalkers.size())];
+                pair=neightbourWalkers[rnd::next(neightbourWalkers.size())];
             }
             broadcast(world,pair,i);
             if (world.rank()==i){
@@ -141,7 +141,7 @@ void WangLandauMPI::walk(unsigned stepsPerWalk)
 
         eNew = sys->E();
 
-        double randnum = Random::Instance()->nextDouble();
+        double randnum = rnd::nextDouble();
         if (randnum==0.0)
             randnum=10e-20;
         randnum = std::log(randnum);
@@ -176,8 +176,8 @@ void WangLandauMPI::checkParams()
         qFatal("Error! The system is empty.");
     }
 
-    if (sys->Minstate().size()==0 || sys->Maxstate().size()==0)
-        qFatal("Min or max state is unknown. DOS calculation is impossible.");
+    //if (sys->Minstate().size()==0 || sys->Maxstate().size()==0)
+    //    qFatal("Min or max state is unknown. DOS calculation is impossible.");
 
 }
 
@@ -472,7 +472,7 @@ void WangLandauMPI::sendSystem(int pair)
         } else {
             qDebug()<<QString("(send) calculating probability for exchange with %1").arg(pair);
             double p = (giex+gjey) - (giey+gjex);
-            double randnum = Random::Instance()->nextDouble();
+            double randnum = rnd::nextDouble();
             if (0.0==randnum) //логарифма нуля не существует
                 randnum=10e-15;
             randnum = std::log(randnum);
